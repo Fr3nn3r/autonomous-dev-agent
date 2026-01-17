@@ -1,0 +1,65 @@
+{
+  "project_name": "Example Web App",
+  "project_path": "/path/to/your/project",
+  "features": [
+    {
+      "id": "user-auth",
+      "name": "User Authentication",
+      "description": "Implement user login and registration with JWT tokens. Include password hashing, session management, and logout functionality.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 10,
+      "acceptance_criteria": [
+        "User can register with email and password",
+        "User can log in and receive JWT token",
+        "Protected routes require valid JWT",
+        "User can log out and token is invalidated",
+        "Passwords are hashed with bcrypt"
+      ],
+      "depends_on": [],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": []
+    },
+    {
+      "id": "user-profile",
+      "name": "User Profile Page",
+      "description": "Create a user profile page where users can view and edit their information.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 5,
+      "acceptance_criteria": [
+        "Profile page displays user info",
+        "User can edit their name and email",
+        "Changes are persisted to database",
+        "Form validation for email format"
+      ],
+      "depends_on": ["user-auth"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": []
+    },
+    {
+      "id": "api-rate-limiting",
+      "name": "API Rate Limiting",
+      "description": "Add rate limiting to API endpoints to prevent abuse.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 3,
+      "acceptance_criteria": [
+        "Rate limit of 100 requests per minute per IP",
+        "Returns 429 status when limit exceeded",
+        "Rate limit headers in responses"
+      ],
+      "depends_on": [],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": []
+    }
+  ],
+  "created_at": "2024-01-15T10:00:00",
+  "last_updated": "2024-01-15T10:00:00"
+}
