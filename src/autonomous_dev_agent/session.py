@@ -154,10 +154,15 @@ class AgentSession:
             is_exit_code_error = "exit code 1" in error_str.lower() or "exit code: 1" in error_str.lower()
 
             if received_result_message and is_exit_code_error:
-                # We got a valid result before the exit code error - treat as success
-                print(f"\n[WARN] Ignoring exit code 1 error (Windows SDK bug) - session completed successfully")
-                if message_count > 0:
-                    result.success = True
+                # WORKAROUND: Windows SDK exit code 1 bug
+                # We got messages before the error, so the session may have completed.
+                # However, we can't be certain - the error may have interrupted work.
+                # Set success=False to avoid falsely marking features as complete.
+                # The harness will treat this as "session ended, manual review needed".
+                print(f"\n[WARN] Exit code 1 error (Windows SDK bug) - session status uncertain")
+                print(f"[INFO] Received {message_count} messages before error. Manual review recommended.")
+                result.success = False
+                result.error_message = "Session ended with exit code 1 (Windows SDK bug) - status uncertain"
             else:
                 # Genuine error - session failed
                 result.success = False
