@@ -1,18 +1,22 @@
-"""Session management for the Claude Agent SDK.
+"""Session management for the Claude Agent.
 
-Handles invoking the agent, monitoring context usage, and session lifecycle.
+Supports two modes:
+- CLI: Direct invocation of `claude` command (uses Claude subscription, reliable)
+- SDK: Claude Agent SDK (uses API credits, streaming but less reliable on Windows)
 """
 
 import asyncio
 import json
+import subprocess
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import AsyncIterator, Optional, Callable, Any
+from typing import Optional, Callable, Any
 
 from pydantic import BaseModel
 
-from .models import HarnessConfig, SessionState, Feature
+from .models import HarnessConfig, SessionState, Feature, SessionMode
 
 
 class SessionResult(BaseModel):
@@ -25,15 +29,15 @@ class SessionResult(BaseModel):
     handoff_requested: bool = False
     summary: Optional[str] = None
     files_changed: list[str] = []
+    # New: capture raw output for debugging
+    raw_output: Optional[str] = None
+    raw_error: Optional[str] = None
 
 
 class AgentSession:
     """Manages a single agent session.
 
-    Wraps the Claude Agent SDK to provide:
-    - Context usage monitoring
-    - Graceful handoff triggers
-    - Structured result capture
+    Supports both CLI and SDK modes based on config.
     """
 
     def __init__(
@@ -73,18 +77,116 @@ class AgentSession:
     ) -> SessionResult:
         """Run an agent session with the given prompt.
 
-        Args:
-            prompt: The task prompt for the agent
-            on_message: Optional callback for streaming messages
+        Routes to CLI or SDK based on config.session_mode.
+        """
+        if self.config.session_mode == SessionMode.CLI:
+            return await self._run_cli_session(prompt, on_message)
+        else:
+            return await self._run_sdk_session(prompt, on_message)
 
-        Returns:
-            SessionResult with completion status and context usage
+    async def _run_cli_session(
+        self,
+        prompt: str,
+        on_message: Optional[Callable[[Any], None]] = None
+    ) -> SessionResult:
+        """Run session using direct CLI invocation.
+
+        Uses the user's Claude subscription, not API credits.
+        More reliable on Windows than the SDK.
+        """
+        result = SessionResult(
+            session_id=self.session_id,
+            success=False,
+            context_usage_percent=0.0
+        )
+
+        # Build the claude command
+        cmd = [
+            "claude",
+            "-p", prompt,  # Non-interactive mode with prompt
+            "--model", self.config.model,
+            "--max-turns", str(self.config.cli_max_turns),
+            "--dangerously-skip-permissions",  # Allow all tools for autonomous operation
+        ]
+
+        print(f"\n[CLI] Starting session with model: {self.config.model}")
+        print(f"[CLI] Working directory: {self.project_path}")
+        print(f"[CLI] Max turns: {self.config.cli_max_turns}")
+
+        try:
+            # Run claude CLI as subprocess
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                cwd=str(self.project_path),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            # Wait for completion and capture output
+            stdout, stderr = await process.communicate()
+
+            stdout_text = stdout.decode('utf-8', errors='replace') if stdout else ""
+            stderr_text = stderr.decode('utf-8', errors='replace') if stderr else ""
+
+            # Store raw output for debugging
+            result.raw_output = stdout_text
+            result.raw_error = stderr_text
+
+            # Print output in real-time style (for now just print after completion)
+            if stdout_text:
+                print(stdout_text)
+
+            # Check for errors
+            if process.returncode != 0:
+                # Check for known error patterns
+                error_text = stderr_text or stdout_text
+
+                if "credit balance" in error_text.lower():
+                    result.error_message = f"API Credit Error: {error_text.strip()}"
+                    print(f"\n[ERROR] API credits issue: {error_text}")
+                elif "rate limit" in error_text.lower():
+                    result.error_message = f"Rate Limited: {error_text.strip()}"
+                    print(f"\n[ERROR] Rate limited: {error_text}")
+                elif "authentication" in error_text.lower() or "unauthorized" in error_text.lower():
+                    result.error_message = f"Auth Error: {error_text.strip()}"
+                    print(f"\n[ERROR] Authentication issue: {error_text}")
+                else:
+                    result.error_message = f"CLI exited with code {process.returncode}: {error_text.strip()}"
+                    print(f"\n[ERROR] CLI failed (code {process.returncode})")
+                    if stderr_text:
+                        print(f"[STDERR] {stderr_text}")
+
+                result.success = False
+            else:
+                result.success = True
+                result.summary = "Session completed successfully via CLI"
+                print(f"\n[CLI] Session completed successfully")
+
+        except FileNotFoundError:
+            result.error_message = "Claude CLI not found. Make sure 'claude' is installed and in PATH."
+            print(f"\n[ERROR] {result.error_message}")
+        except Exception as e:
+            result.error_message = f"CLI session error: {str(e)}"
+            print(f"\n[ERROR] {result.error_message}")
+            import traceback
+            traceback.print_exc()
+
+        return result
+
+    async def _run_sdk_session(
+        self,
+        prompt: str,
+        on_message: Optional[Callable[[Any], None]] = None
+    ) -> SessionResult:
+        """Run session using Claude Agent SDK.
+
+        Note: Uses API credits, not Claude subscription.
+        Known to have reliability issues on Windows.
         """
         try:
             # Import SDK here to allow graceful failure if not installed
             from claude_agent_sdk import query, ClaudeAgentOptions
         except ImportError:
-            # Fallback for development/testing without SDK
             return await self._run_mock_session(prompt, on_message)
 
         result = SessionResult(
@@ -93,9 +195,13 @@ class AgentSession:
             context_usage_percent=0.0
         )
 
-        # Track message processing for Windows exit code workaround
+        # Track message processing
         message_count = 0
         received_result_message = False
+        all_messages = []  # Capture all messages for debugging
+
+        print(f"\n[SDK] Starting session with model: {self.config.model}")
+        print(f"[SDK] NOTE: SDK uses API credits, not your Claude subscription")
 
         try:
             options = ClaudeAgentOptions(
@@ -108,12 +214,16 @@ class AgentSession:
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
 
+                # Capture message for debugging
+                msg_type = type(message).__name__
+                msg_text = getattr(message, 'text', None) or getattr(message, 'content', None) or str(message)
+                all_messages.append(f"[{msg_type}] {msg_text[:200] if msg_text else '(no text)'}")
+
                 # Track context usage from message metadata
                 if hasattr(message, 'usage'):
                     usage = message.usage
                     input_tokens = usage.get('input_tokens', 0)
                     output_tokens = usage.get('output_tokens', 0)
-                    # Estimate context usage (assuming ~200k context window)
                     total_tokens = input_tokens + output_tokens
                     self.context_usage_percent = (total_tokens / 200000) * 100
                     result.context_usage_percent = self.context_usage_percent
@@ -126,50 +236,81 @@ class AgentSession:
                 if on_message:
                     on_message(message)
 
-                # Check for ResultMessage (final message type in SDK)
-                message_type = type(message).__name__
-                if message_type == 'ResultMessage':
+                # Check for ResultMessage
+                if msg_type == 'ResultMessage':
                     received_result_message = True
-                    result.success = not getattr(message, 'is_error', False)
+                    is_error = getattr(message, 'is_error', False)
+                    result.success = not is_error
                     if hasattr(message, 'text'):
                         result.summary = message.text
+                    # Check for error content in the result
+                    if is_error and hasattr(message, 'text'):
+                        result.error_message = message.text
+                        print(f"\n[SDK ERROR] Agent returned error: {message.text}")
                 elif hasattr(message, 'is_final') and message.is_final:
                     received_result_message = True
-                    result.success = not getattr(message, 'is_error', False)
+                    is_error = getattr(message, 'is_error', False)
+                    result.success = not is_error
                     if hasattr(message, 'text'):
                         result.summary = message.text
+
+            # Store message log for debugging
+            result.raw_output = "\n".join(all_messages)
 
             # If we processed messages without error, consider it success
             if message_count > 0 and not result.error_message:
                 result.success = True
 
         except Exception as e:
-            # WORKAROUND: Windows SDK exit code 1 bug
-            # The bundled claude.exe on Windows sometimes exits with code 1
-            # even after successfully processing all messages. If we received
-            # a ResultMessage, treat the session as successful despite the error.
-            # See: https://github.com/anthropics/claude-agent-sdk-python/issues/238
-            #      https://github.com/anthropics/claude-agent-sdk-python/issues/208
             error_str = str(e)
-            is_exit_code_error = "exit code 1" in error_str.lower() or "exit code: 1" in error_str.lower()
 
-            if received_result_message and is_exit_code_error:
-                # WORKAROUND: Windows SDK exit code 1 bug
-                # We got messages before the error, so the session may have completed.
-                # However, we can't be certain - the error may have interrupted work.
-                # Set success=False to avoid falsely marking features as complete.
-                # The harness will treat this as "session ended, manual review needed".
-                print(f"\n[WARN] Exit code 1 error (Windows SDK bug) - session status uncertain")
-                print(f"[INFO] Received {message_count} messages before error. Manual review recommended.")
-                result.success = False
-                result.error_message = "Session ended with exit code 1 (Windows SDK bug) - status uncertain"
+            # Store the raw error
+            result.raw_error = error_str
+
+            # Always log the full error for visibility
+            print(f"\n[SDK ERROR] Exception during session:")
+            print(f"[SDK ERROR] {error_str}")
+
+            # Check for specific error patterns and display clearly
+            error_lower = error_str.lower()
+            if "credit balance" in error_lower:
+                print(f"\n{'='*60}")
+                print("[BILLING ERROR] Credit balance is too low!")
+                print("The SDK uses Anthropic API credits, NOT your Claude subscription.")
+                print("Options:")
+                print("  1. Add credits at console.anthropic.com")
+                print("  2. Use CLI mode instead (uses your subscription)")
+                print(f"{'='*60}\n")
+                result.error_message = "API Credit Error: Credit balance is too low. SDK uses API credits, not Claude subscription."
+            elif "rate limit" in error_lower or "429" in error_str:
+                print(f"\n[BILLING ERROR] Rate limited - too many requests")
+                result.error_message = f"Rate Limited: {error_str}"
+            elif "unauthorized" in error_lower or "401" in error_str or "authentication" in error_lower:
+                print(f"\n[AUTH ERROR] Authentication failed")
+                result.error_message = f"Auth Error: {error_str}"
+            elif "exit code 1" in error_lower or "exit code: 1" in error_lower:
+                # Windows SDK bug - but now we have more context
+                print(f"\n[SDK] Exit code 1 encountered")
+                print(f"[SDK] Messages received before error: {message_count}")
+                if all_messages:
+                    print(f"[SDK] Last few messages:")
+                    for msg in all_messages[-3:]:
+                        print(f"  {msg}")
+
+                if received_result_message and message_count > 0:
+                    print(f"[SDK] Received ResultMessage - session may have completed")
+                    result.error_message = "Session ended with exit code 1 - status uncertain, review changes"
+                else:
+                    result.error_message = f"SDK crashed with exit code 1 before completing: {error_str}"
             else:
-                # Genuine error - session failed
-                result.success = False
-                result.error_message = error_str
-                import traceback
-                print(f"\n[ERROR] Session failed: {e}")
-                traceback.print_exc()
+                result.error_message = f"SDK Error: {error_str}"
+
+            result.success = False
+
+            # Print full traceback for debugging
+            import traceback
+            print("\n[SDK] Full traceback:")
+            traceback.print_exc()
 
         return result
 
@@ -187,7 +328,7 @@ class AgentSession:
         return SessionResult(
             session_id=self.session_id,
             success=True,
-            context_usage_percent=45.0,  # Mock value
+            context_usage_percent=45.0,
             summary="[MOCK] Session completed successfully",
             files_changed=[]
         )

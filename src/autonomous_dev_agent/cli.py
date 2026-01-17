@@ -9,7 +9,7 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from .models import Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig
+from .models import Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig, SessionMode
 from .harness import AutonomousHarness
 
 console = Console()
@@ -24,27 +24,55 @@ def main():
 
 @main.command()
 @click.argument('project_path', type=click.Path(exists=True))
-@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model to use')
+@click.option('--mode', type=click.Choice(['cli', 'sdk']), default='cli',
+              help='Session mode: cli (uses subscription, reliable) or sdk (uses API credits)')
+@click.option('--model', default='claude-opus-4-5-20251101', help='Claude model to use')
 @click.option('--threshold', default=70.0, help='Context threshold percentage for handoff')
 @click.option('--max-sessions', type=int, help='Maximum sessions before stopping')
+@click.option('--max-turns', default=100, help='Maximum turns per session (CLI mode only)')
 @click.option('--backlog', default='feature-list.json', help='Backlog file name')
 def run(
     project_path: str,
+    mode: str,
     model: str,
     threshold: float,
     max_sessions: Optional[int],
+    max_turns: int,
     backlog: str
 ):
     """Run the autonomous agent on a project.
 
     PROJECT_PATH is the path to the project directory containing feature-list.json.
+
+    Two modes are available:
+
+    \b
+    --mode cli (default):
+      - Uses the Claude CLI directly
+      - Billed to your Claude subscription (Pro/Max)
+      - More reliable on Windows
+      - No streaming, waits for completion
+
+    \b
+    --mode sdk:
+      - Uses the Claude Agent SDK
+      - Billed to Anthropic API credits (separate from subscription)
+      - Streaming output
+      - Known reliability issues on Windows
     """
+    session_mode = SessionMode.CLI if mode == 'cli' else SessionMode.SDK
+
     config = HarnessConfig(
+        session_mode=session_mode,
         model=model,
         context_threshold_percent=threshold,
         max_sessions=max_sessions,
+        cli_max_turns=max_turns,
         backlog_file=backlog
     )
+
+    console.print(f"[bold]Mode:[/bold] {mode.upper()} ({'subscription' if mode == 'cli' else 'API credits'})")
+    console.print(f"[bold]Model:[/bold] {model}")
 
     harness = AutonomousHarness(project_path, config)
 

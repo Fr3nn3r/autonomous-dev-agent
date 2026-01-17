@@ -153,6 +153,12 @@ class SessionState(BaseModel):
     handoff_notes: Optional[str] = None
 
 
+class SessionMode(str, Enum):
+    """How to invoke Claude for agent sessions."""
+    CLI = "cli"      # Direct CLI invocation (uses Claude subscription, more reliable)
+    SDK = "sdk"      # Claude Agent SDK (uses API credits, streaming but less reliable on Windows)
+
+
 class HarnessConfig(BaseModel):
     """Configuration for the harness."""
     # Context management
@@ -161,8 +167,17 @@ class HarnessConfig(BaseModel):
         description="Trigger handoff when context reaches this percentage"
     )
 
-    # Model settings
-    model: str = Field(default="claude-sonnet-4-20250514")
+    # Session mode
+    session_mode: SessionMode = Field(
+        default=SessionMode.CLI,
+        description="How to invoke Claude: 'cli' (direct CLI, uses subscription) or 'sdk' (Agent SDK, uses API credits)"
+    )
+
+    # Model settings - different defaults for CLI vs SDK
+    model: str = Field(
+        default="claude-opus-4-5-20251101",
+        description="Model to use. CLI mode supports any model, SDK may have restrictions."
+    )
 
     # Paths
     progress_file: str = Field(default="claude-progress.txt")
@@ -177,10 +192,16 @@ class HarnessConfig(BaseModel):
         description="Maximum sessions before stopping (None = unlimited)"
     )
 
-    # SDK permissions
+    # SDK permissions (only used in SDK mode)
     allowed_tools: list[str] = Field(
         default_factory=lambda: [
             "Read", "Write", "Edit", "Bash", "Glob", "Grep",
             "WebFetch", "WebSearch"
         ]
+    )
+
+    # CLI options
+    cli_max_turns: int = Field(
+        default=100,
+        description="Maximum agentic turns for CLI mode (prevents runaway sessions)"
     )
