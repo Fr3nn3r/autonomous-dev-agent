@@ -7,6 +7,8 @@ Supports two modes:
 
 import asyncio
 import json
+import os
+import shutil
 import subprocess
 import sys
 import uuid
@@ -70,6 +72,46 @@ class AgentSession:
         if self._state_file.exists():
             self._state_file.unlink()
 
+    def _find_claude_executable(self) -> Optional[str]:
+        """Find the claude CLI executable.
+
+        On Windows, npm installs as .cmd files which need special handling.
+        Also checks common installation locations.
+        """
+        # Try shutil.which first (respects PATH)
+        claude_path = shutil.which("claude")
+        if claude_path:
+            return claude_path
+
+        # On Windows, try .cmd extension
+        if sys.platform == "win32":
+            claude_path = shutil.which("claude.cmd")
+            if claude_path:
+                return claude_path
+
+            # Check common npm global locations on Windows
+            npm_paths = [
+                Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd",
+                Path(os.environ.get("LOCALAPPDATA", "")) / "npm" / "claude.cmd",
+                Path.home() / "AppData" / "Roaming" / "npm" / "claude.cmd",
+            ]
+            for p in npm_paths:
+                if p.exists():
+                    return str(p)
+
+        # On Unix, check common locations
+        else:
+            unix_paths = [
+                Path.home() / ".npm-global" / "bin" / "claude",
+                Path("/usr/local/bin/claude"),
+                Path.home() / ".local" / "bin" / "claude",
+            ]
+            for p in unix_paths:
+                if p.exists():
+                    return str(p)
+
+        return None
+
     async def run(
         self,
         prompt: str,
@@ -100,9 +142,16 @@ class AgentSession:
             context_usage_percent=0.0
         )
 
+        # Find the claude executable
+        claude_path = self._find_claude_executable()
+        if not claude_path:
+            result.error_message = "Claude CLI not found. Make sure 'claude' is installed and in PATH."
+            print(f"\n[ERROR] {result.error_message}")
+            return result
+
         # Build the claude command
         cmd = [
-            "claude",
+            claude_path,
             "-p", prompt,  # Non-interactive mode with prompt
             "--model", self.config.model,
             "--max-turns", str(self.config.cli_max_turns),
@@ -112,15 +161,29 @@ class AgentSession:
         print(f"\n[CLI] Starting session with model: {self.config.model}")
         print(f"[CLI] Working directory: {self.project_path}")
         print(f"[CLI] Max turns: {self.config.cli_max_turns}")
+        print(f"[CLI] Using executable: {claude_path}")
 
         try:
             # Run claude CLI as subprocess
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=str(self.project_path),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            # On Windows, we need shell=True for .cmd files to work properly
+            use_shell = sys.platform == "win32"
+
+            if use_shell:
+                # For shell=True, pass command as string
+                cmd_str = subprocess.list2cmdline(cmd)
+                process = await asyncio.create_subprocess_shell(
+                    cmd_str,
+                    cwd=str(self.project_path),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+            else:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    cwd=str(self.project_path),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
 
             # Wait for completion and capture output
             stdout, stderr = await process.communicate()
