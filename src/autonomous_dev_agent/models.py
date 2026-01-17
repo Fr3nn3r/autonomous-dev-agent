@@ -169,7 +169,7 @@ class HarnessConfig(BaseModel):
 
     # Session mode
     session_mode: SessionMode = Field(
-        default=SessionMode.CLI,
+        default=SessionMode.SDK,
         description="How to invoke Claude: 'cli' (direct CLI, uses subscription) or 'sdk' (Agent SDK, uses API credits)"
     )
 

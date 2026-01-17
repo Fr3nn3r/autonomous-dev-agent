@@ -24,7 +24,7 @@ def main():
 
 @main.command()
 @click.argument('project_path', type=click.Path(exists=True))
-@click.option('--mode', type=click.Choice(['cli', 'sdk']), default='cli',
+@click.option('--mode', type=click.Choice(['cli', 'sdk']), default='sdk',
               help='Session mode: cli (uses subscription, reliable) or sdk (uses API credits)')
 @click.option('--model', default='claude-opus-4-5-20251101', help='Claude model to use')
 @click.option('--threshold', default=70.0, help='Context threshold percentage for handoff')
