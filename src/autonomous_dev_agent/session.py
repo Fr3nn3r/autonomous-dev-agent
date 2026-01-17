@@ -162,6 +162,8 @@ class AgentSession:
         print(f"[CLI] Working directory: {self.project_path}")
         print(f"[CLI] Max turns: {self.config.cli_max_turns}")
         print(f"[CLI] Using executable: {claude_path}")
+        print(f"[CLI] Prompt length: {len(prompt)} chars")
+        print(f"[CLI] Command: {cmd[0]} {' '.join(cmd[1:3])}... (prompt truncated)")
 
         try:
             # Run claude CLI as subprocess
@@ -195,9 +197,18 @@ class AgentSession:
             result.raw_output = stdout_text
             result.raw_error = stderr_text
 
-            # Print output in real-time style (for now just print after completion)
+            # Debug: Show what we got back
+            print(f"\n[CLI DEBUG] Return code: {process.returncode}")
+            print(f"[CLI DEBUG] Stdout length: {len(stdout_text)} chars")
+            print(f"[CLI DEBUG] Stderr length: {len(stderr_text)} chars")
+            if stderr_text:
+                print(f"[CLI DEBUG] Stderr: {stderr_text[:500]}")
+            if not stdout_text and not stderr_text:
+                print(f"[CLI DEBUG] No output received from CLI!")
+
+            # Print output
             if stdout_text:
-                print(stdout_text)
+                print(f"\n[CLI OUTPUT]\n{stdout_text}")
 
             # Check for errors
             if process.returncode != 0:
