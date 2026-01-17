@@ -105,7 +105,7 @@ class AutonomousHarness:
 
         lines = []
         for i, f in enumerate(self.backlog.features, 1):
-            status_icon = "✓" if f.status == FeatureStatus.COMPLETED else "○"
+            status_icon = "x" if f.status == FeatureStatus.COMPLETED else "o"
             lines.append(f"{i}. [{status_icon}] {f.name} ({f.category.value})")
         return "\n".join(lines)
 
@@ -114,7 +114,7 @@ class AutonomousHarness:
         console.print(Panel(
             "[bold blue]Running Initializer Agent[/bold blue]\n"
             "Setting up development environment...",
-            title="🚀 Initialization"
+            title="Initialization"
         ))
 
         template = self._load_prompt_template("initializer")
@@ -146,7 +146,7 @@ class AutonomousHarness:
         console.print(Panel(
             f"[bold green]Feature:[/bold green] {feature.name}\n"
             f"[dim]{feature.description}[/dim]",
-            title=f"💻 Coding Session"
+            title="Coding Session"
         ))
 
         # Mark feature as in progress
@@ -188,7 +188,7 @@ class AutonomousHarness:
         result: SessionResult
     ) -> None:
         """Perform a clean handoff to the next session."""
-        console.print("\n[yellow]⚠ Context threshold reached - performing handoff...[/yellow]")
+        console.print("\n[yellow]WARNING: Context threshold reached - performing handoff...[/yellow]")
 
         # Get git status
         git_status = self.git.get_status()
@@ -220,7 +220,7 @@ class AutonomousHarness:
         )
         self.save_backlog()
 
-        console.print(f"[green]✓ Handoff complete. Commit: {commit_hash or 'no changes'}[/green]")
+        console.print(f"[green]OK[/green] Handoff complete. Commit: {commit_hash or 'no changes'}")
 
     def _complete_feature(
         self,
@@ -248,7 +248,7 @@ class AutonomousHarness:
         )
         self.save_backlog()
 
-        console.print(f"[green]✓ Feature completed: {feature.name}[/green]")
+        console.print(f"[green]OK[/green] Feature completed: {feature.name}")
 
     def _on_message(self, message: Any) -> None:
         """Handle streaming messages from the agent."""
@@ -261,7 +261,7 @@ class AutonomousHarness:
         console.print(Panel(
             f"[bold]Autonomous Development Agent[/bold]\n"
             f"Project: {self.project_path.name}",
-            title="🤖 ADA Harness"
+            title="ADA Harness"
         ))
 
         # Load backlog
@@ -310,7 +310,7 @@ class AutonomousHarness:
         console.print(Panel(
             f"[bold]Sessions run:[/bold] {self.total_sessions}\n"
             f"[bold]Features completed:[/bold] {completed}/{len(self.backlog.features)}",
-            title="📊 Summary"
+            title="Summary"
         ))
 
 

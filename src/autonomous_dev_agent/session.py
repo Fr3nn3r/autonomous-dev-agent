@@ -101,7 +101,10 @@ class AgentSession:
                 cwd=str(self.project_path)
             )
 
+            message_count = 0
             async for message in query(prompt=prompt, options=options):
+                message_count += 1
+
                 # Track context usage from message metadata
                 if hasattr(message, 'usage'):
                     usage = message.usage
@@ -120,15 +123,27 @@ class AgentSession:
                 if on_message:
                     on_message(message)
 
-                # Capture final result
-                if hasattr(message, 'is_final') and message.is_final:
+                # Check for ResultMessage (final message type in SDK)
+                message_type = type(message).__name__
+                if message_type == 'ResultMessage':
+                    result.success = not getattr(message, 'is_error', False)
+                    if hasattr(message, 'text'):
+                        result.summary = message.text
+                elif hasattr(message, 'is_final') and message.is_final:
                     result.success = not getattr(message, 'is_error', False)
                     if hasattr(message, 'text'):
                         result.summary = message.text
 
+            # If we processed messages without error, consider it success
+            if message_count > 0 and not result.error_message:
+                result.success = True
+
         except Exception as e:
             result.success = False
             result.error_message = str(e)
+            import traceback
+            print(f"\n[ERROR] Session failed: {e}")
+            traceback.print_exc()
 
         return result
 

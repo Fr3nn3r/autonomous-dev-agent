@@ -80,7 +80,7 @@ def init(project_path: str, name: str):
         return
 
     backlog_file.write_text(backlog.model_dump_json(indent=2))
-    console.print(f"[green]✓ Created {backlog_file}[/green]")
+    console.print(f"[green]OK[/green] Created {backlog_file}")
     console.print(f"\nNext steps:")
     console.print(f"  1. Add features: ada add-feature {project_path} --name 'Feature name'")
     console.print(f"  2. Run agent: ada run {project_path}")
@@ -139,7 +139,7 @@ def add_feature(
     backlog.features.append(feature)
     backlog_file.write_text(backlog.model_dump_json(indent=2))
 
-    console.print(f"[green]✓ Added feature: {feature_id}[/green]")
+    console.print(f"[green]OK[/green] Added feature: {feature_id}")
 
 
 @main.command()
@@ -277,7 +277,7 @@ def import_backlog(project_path: str, markdown_file: str):
             imported += 1
 
     backlog_file.write_text(backlog.model_dump_json(indent=2))
-    console.print(f"[green]✓ Imported {imported} features from {markdown_file}[/green]")
+    console.print(f"[green]OK[/green] Imported {imported} features from {markdown_file}")
 
 
 if __name__ == '__main__':
