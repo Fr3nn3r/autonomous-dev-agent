@@ -8,6 +8,7 @@ Supports two modes:
 import asyncio
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -166,29 +167,41 @@ class AgentSession:
         print(f"[CLI] Command: {cmd[0]} {' '.join(cmd[1:3])}... (prompt truncated)")
 
         try:
-            # Run claude CLI as subprocess
-            # On Windows, we need shell=True for .cmd files to work properly
-            use_shell = sys.platform == "win32"
+            # Write prompt to a temp file to avoid shell escaping issues on Windows
+            import tempfile
+            prompt_file = Path(tempfile.gettempdir()) / f"ada_prompt_{self.session_id}.txt"
+            prompt_file.write_text(prompt, encoding='utf-8')
 
-            if use_shell:
-                # For shell=True, pass command as string
-                cmd_str = subprocess.list2cmdline(cmd)
-                process = await asyncio.create_subprocess_shell(
-                    cmd_str,
-                    cwd=str(self.project_path),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-            else:
-                process = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    cwd=str(self.project_path),
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
+            # Build command using stdin for the prompt
+            # Use -p - to read from stdin, avoiding shell quoting issues entirely
+            cmd_stdin = [
+                claude_path,
+                "--model", self.config.model,
+                "--max-turns", str(self.config.cli_max_turns),
+                "--dangerously-skip-permissions",
+                "-p", "-",  # Read prompt from stdin
+            ]
 
-            # Wait for completion and capture output
-            stdout, stderr = await process.communicate()
+            print(f"[CLI] Prompt saved to: {prompt_file}")
+            print(f"[CLI] Running: {' '.join(cmd_stdin)}")
+
+            # Run claude CLI - use subprocess_exec directly (works with .cmd on Windows too)
+            process = await asyncio.create_subprocess_exec(
+                *cmd_stdin,
+                cwd=str(self.project_path),
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+
+            # Send prompt via stdin and wait for completion
+            stdout, stderr = await process.communicate(input=prompt.encode('utf-8'))
+
+            # Clean up temp file
+            try:
+                prompt_file.unlink()
+            except:
+                pass
 
             stdout_text = stdout.decode('utf-8', errors='replace') if stdout else ""
             stderr_text = stderr.decode('utf-8', errors='replace') if stderr else ""
