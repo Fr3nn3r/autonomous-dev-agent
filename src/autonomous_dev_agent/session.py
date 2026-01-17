@@ -289,6 +289,12 @@ class AgentSession:
 
         print(f"\n[SDK] Starting session with model: {self.config.model}")
         print(f"[SDK] NOTE: SDK uses API credits, not your Claude subscription")
+        print(f"[SDK] Working directory: {self.project_path}")
+        print(f"[SDK] Allowed tools: {', '.join(self.config.allowed_tools)}")
+        print(f"[SDK] Prompt length: {len(prompt)} chars")
+        print(f"\n{'='*60}")
+        print("[SDK] Waiting for messages from Claude Agent SDK...")
+        print(f"{'='*60}\n")
 
         try:
             options = ClaudeAgentOptions(
@@ -306,6 +312,32 @@ class AgentSession:
                 msg_text = getattr(message, 'text', None) or getattr(message, 'content', None) or str(message)
                 all_messages.append(f"[{msg_type}] {msg_text[:200] if msg_text else '(no text)'}")
 
+                # === VERBOSE LOGGING ===
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                print(f"\n[{timestamp}] Message #{message_count}: {msg_type}")
+
+                # Show text content (truncated)
+                if msg_text and isinstance(msg_text, str):
+                    display_text = msg_text[:300] + "..." if len(msg_text) > 300 else msg_text
+                    # Clean up for display
+                    display_text = display_text.replace('\n', ' ').strip()
+                    if display_text:
+                        print(f"  Content: {display_text}")
+
+                # Show tool usage if present
+                if hasattr(message, 'tool_name'):
+                    print(f"  Tool: {message.tool_name}")
+                if hasattr(message, 'tool_input'):
+                    tool_input = str(message.tool_input)[:200]
+                    print(f"  Input: {tool_input}...")
+                if hasattr(message, 'tool_result'):
+                    tool_result = str(message.tool_result)[:200]
+                    print(f"  Result: {tool_result}...")
+
+                # Show any error info
+                if hasattr(message, 'is_error') and message.is_error:
+                    print(f"  ERROR: {getattr(message, 'error', 'Unknown error')}")
+
                 # Track context usage from message metadata
                 if hasattr(message, 'usage'):
                     usage = message.usage
@@ -314,10 +346,12 @@ class AgentSession:
                     total_tokens = input_tokens + output_tokens
                     self.context_usage_percent = (total_tokens / 200000) * 100
                     result.context_usage_percent = self.context_usage_percent
+                    print(f"  Tokens: {input_tokens} in / {output_tokens} out ({self.context_usage_percent:.1f}% context)")
 
                 # Check for handoff trigger
                 if self.context_usage_percent >= self.config.context_threshold_percent:
                     result.handoff_requested = True
+                    print(f"  [!] Context threshold reached - handoff requested")
 
                 # Forward message to callback
                 if on_message:
@@ -334,15 +368,22 @@ class AgentSession:
                     if is_error and hasattr(message, 'text'):
                         result.error_message = message.text
                         print(f"\n[SDK ERROR] Agent returned error: {message.text}")
+                    else:
+                        print(f"\n[SDK] ResultMessage received - session completing")
                 elif hasattr(message, 'is_final') and message.is_final:
                     received_result_message = True
                     is_error = getattr(message, 'is_error', False)
                     result.success = not is_error
                     if hasattr(message, 'text'):
                         result.summary = message.text
+                    print(f"\n[SDK] Final message received")
 
             # Store message log for debugging
             result.raw_output = "\n".join(all_messages)
+
+            print(f"\n{'='*60}")
+            print(f"[SDK] Session completed - processed {message_count} messages")
+            print(f"{'='*60}\n")
 
             # If we processed messages without error, consider it success
             if message_count > 0 and not result.error_message:
