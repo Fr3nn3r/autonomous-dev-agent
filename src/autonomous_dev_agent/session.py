@@ -93,6 +93,10 @@ class AgentSession:
             context_usage_percent=0.0
         )
 
+        # Track message processing for Windows exit code workaround
+        message_count = 0
+        received_result_message = False
+
         try:
             options = ClaudeAgentOptions(
                 model=self.config.model,
@@ -101,7 +105,6 @@ class AgentSession:
                 cwd=str(self.project_path)
             )
 
-            message_count = 0
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
 
@@ -126,10 +129,12 @@ class AgentSession:
                 # Check for ResultMessage (final message type in SDK)
                 message_type = type(message).__name__
                 if message_type == 'ResultMessage':
+                    received_result_message = True
                     result.success = not getattr(message, 'is_error', False)
                     if hasattr(message, 'text'):
                         result.summary = message.text
                 elif hasattr(message, 'is_final') and message.is_final:
+                    received_result_message = True
                     result.success = not getattr(message, 'is_error', False)
                     if hasattr(message, 'text'):
                         result.summary = message.text
@@ -139,11 +144,27 @@ class AgentSession:
                 result.success = True
 
         except Exception as e:
-            result.success = False
-            result.error_message = str(e)
-            import traceback
-            print(f"\n[ERROR] Session failed: {e}")
-            traceback.print_exc()
+            # WORKAROUND: Windows SDK exit code 1 bug
+            # The bundled claude.exe on Windows sometimes exits with code 1
+            # even after successfully processing all messages. If we received
+            # a ResultMessage, treat the session as successful despite the error.
+            # See: https://github.com/anthropics/claude-agent-sdk-python/issues/238
+            #      https://github.com/anthropics/claude-agent-sdk-python/issues/208
+            error_str = str(e)
+            is_exit_code_error = "exit code 1" in error_str.lower() or "exit code: 1" in error_str.lower()
+
+            if received_result_message and is_exit_code_error:
+                # We got a valid result before the exit code error - treat as success
+                print(f"\n[WARN] Ignoring exit code 1 error (Windows SDK bug) - session completed successfully")
+                if message_count > 0:
+                    result.success = True
+            else:
+                # Genuine error - session failed
+                result.success = False
+                result.error_message = error_str
+                import traceback
+                print(f"\n[ERROR] Session failed: {e}")
+                traceback.print_exc()
 
         return result
 
