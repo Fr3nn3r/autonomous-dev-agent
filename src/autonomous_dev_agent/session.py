@@ -8,6 +8,7 @@ Supports two modes:
 import asyncio
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -15,12 +16,45 @@ import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, List
 
 from pydantic import BaseModel
 
 from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory, UsageStats
 from .cost_tracker import CostTracker
+
+
+# Patterns that indicate CLI is waiting for user input
+CLI_INPUT_PROMPTS = [
+    r"Do you want to proceed\?",
+    r"❯\s*\d+\.\s*(Yes|No)",  # Interactive menu
+    r"\[y/N\]",
+    r"\[Y/n\]",
+    r"Press Enter to continue",
+    r"Waiting for confirmation",
+    r"Allow this action\?",
+    r"Permission required",
+    r"Type 'yes' to confirm",
+]
+
+# Compile patterns for efficiency
+CLI_INPUT_PATTERNS = [re.compile(p, re.IGNORECASE) for p in CLI_INPUT_PROMPTS]
+
+
+def detect_input_prompt(text: str) -> Optional[str]:
+    """Detect if CLI output contains a prompt waiting for user input.
+
+    Args:
+        text: The CLI output text to check
+
+    Returns:
+        The matched prompt pattern if found, None otherwise
+    """
+    for pattern in CLI_INPUT_PATTERNS:
+        match = pattern.search(text)
+        if match:
+            return match.group(0)
+    return None
 
 
 class SessionResult(BaseModel):
@@ -249,10 +283,16 @@ class AgentSession:
         prompt: str,
         on_message: Optional[Callable[[Any], None]] = None
     ) -> SessionResult:
-        """Run session using direct CLI invocation.
+        """Run session using direct CLI invocation with streaming output.
 
         Uses the user's Claude subscription, not API credits.
         More reliable on Windows than the SDK.
+
+        Features:
+        - Streams output in real-time for visibility
+        - Detects permission prompts and input requests
+        - Per-chunk read timeout to detect stuck processes
+        - Graceful handling of blocking scenarios
         """
         result = SessionResult(
             session_id=self.session_id,
@@ -267,24 +307,18 @@ class AgentSession:
             print(f"\n[ERROR] {result.error_message}")
             return result
 
-        # Build the claude command
-        cmd = [
-            claude_path,
-            "-p", prompt,  # Non-interactive mode with prompt
-            "--model", self.config.model,
-            "--max-turns", str(self.config.cli_max_turns),
-            "--dangerously-skip-permissions",  # Allow all tools for autonomous operation
-        ]
+        # Per-chunk read timeout (seconds) - if no output for this long, assume stuck
+        read_timeout = self.config.cli_read_timeout_seconds
 
         print(f"\n[CLI] Starting session with model: {self.config.model}")
         print(f"[CLI] Working directory: {self.project_path}")
         print(f"[CLI] Max turns: {self.config.cli_max_turns}")
+        print(f"[CLI] Read timeout: {read_timeout}s (per-chunk)")
         print(f"[CLI] Using executable: {claude_path}")
         print(f"[CLI] Prompt length: {len(prompt)} chars")
-        print(f"[CLI] Command: {cmd[0]} {' '.join(cmd[1:3])}... (prompt truncated)")
 
         try:
-            # Write prompt to a temp file to avoid shell escaping issues on Windows
+            # Write prompt to a temp file for debugging
             import tempfile
             prompt_file = Path(tempfile.gettempdir()) / f"ada_prompt_{self.session_id}.txt"
             prompt_file.write_text(prompt, encoding='utf-8')
@@ -303,13 +337,12 @@ class AgentSession:
             print(f"[CLI] Running: {' '.join(cmd_stdin)}")
 
             # Create environment without ANTHROPIC_API_KEY to force subscription usage
-            # If ANTHROPIC_API_KEY is set, Claude CLI uses API credits instead of subscription
             cli_env = os.environ.copy()
             if "ANTHROPIC_API_KEY" in cli_env:
                 del cli_env["ANTHROPIC_API_KEY"]
                 print(f"[CLI] Removed ANTHROPIC_API_KEY from environment to use subscription")
 
-            # Run claude CLI - use subprocess_exec directly (works with .cmd on Windows too)
+            # Run claude CLI with separate stdout/stderr streams
             process = await asyncio.create_subprocess_exec(
                 *cmd_stdin,
                 cwd=str(self.project_path),
@@ -319,8 +352,91 @@ class AgentSession:
                 env=cli_env,
             )
 
-            # Send prompt via stdin and wait for completion
-            stdout, stderr = await process.communicate(input=prompt.encode('utf-8'))
+            # Send prompt via stdin and close stdin to signal end of input
+            process.stdin.write(prompt.encode('utf-8'))
+            await process.stdin.drain()
+            process.stdin.close()
+            await process.stdin.wait_closed()
+
+            print(f"[CLI] Prompt sent, reading output with {read_timeout}s timeout per chunk...")
+
+            # Stream output with per-read timeout to detect blocking
+            stdout_chunks: List[str] = []
+            stderr_chunks: List[str] = []
+            last_output_time = datetime.now()
+            detected_prompt = None
+            recent_output = ""  # Buffer for prompt detection
+
+            async def read_stream_with_timeout(stream, chunks: List[str], stream_name: str):
+                """Read from a stream with timeout detection."""
+                nonlocal last_output_time, detected_prompt, recent_output
+
+                while True:
+                    try:
+                        # Read with timeout
+                        chunk = await asyncio.wait_for(
+                            stream.read(4096),
+                            timeout=read_timeout
+                        )
+
+                        if not chunk:
+                            # Stream ended
+                            break
+
+                        text = chunk.decode('utf-8', errors='replace')
+                        chunks.append(text)
+                        last_output_time = datetime.now()
+
+                        # Print output in real-time
+                        if stream_name == "stdout":
+                            print(text, end='', flush=True)
+
+                            # Buffer recent output for prompt detection
+                            recent_output += text
+                            # Keep only last 1000 chars for detection
+                            if len(recent_output) > 1000:
+                                recent_output = recent_output[-1000:]
+
+                            # Check for input prompts
+                            prompt_match = detect_input_prompt(recent_output)
+                            if prompt_match and not detected_prompt:
+                                detected_prompt = prompt_match
+                                print(f"\n\n[CLI WARNING] Detected input prompt: '{prompt_match}'")
+                                print(f"[CLI WARNING] CLI may be waiting for user input!")
+                                # Don't break - let the timeout handle it
+
+                    except asyncio.TimeoutError:
+                        # No output for read_timeout seconds
+                        elapsed = (datetime.now() - last_output_time).total_seconds()
+                        print(f"\n[CLI WARNING] No output for {elapsed:.0f}s")
+
+                        # Check if process is still running
+                        if process.returncode is not None:
+                            break
+
+                        # If we detected a prompt earlier, this confirms we're stuck
+                        if detected_prompt:
+                            print(f"[CLI ERROR] Process appears stuck on input prompt: '{detected_prompt}'")
+                            return "stuck_on_prompt"
+
+                        # If no prompt detected but still no output, might be processing
+                        # Give it more time up to 3x read_timeout total
+                        if elapsed > read_timeout * 3:
+                            print(f"[CLI ERROR] Process unresponsive for {elapsed:.0f}s, may be stuck")
+                            return "unresponsive"
+
+                return "ok"
+
+            # Read stdout and stderr concurrently
+            stdout_task = asyncio.create_task(
+                read_stream_with_timeout(process.stdout, stdout_chunks, "stdout")
+            )
+            stderr_task = asyncio.create_task(
+                read_stream_with_timeout(process.stderr, stderr_chunks, "stderr")
+            )
+
+            # Wait for both to complete
+            stdout_status, stderr_status = await asyncio.gather(stdout_task, stderr_task)
 
             # Clean up temp file
             try:
@@ -328,15 +444,38 @@ class AgentSession:
             except:
                 pass
 
-            stdout_text = stdout.decode('utf-8', errors='replace') if stdout else ""
-            stderr_text = stderr.decode('utf-8', errors='replace') if stderr else ""
+            # Check if we got stuck
+            if stdout_status in ("stuck_on_prompt", "unresponsive"):
+                print(f"\n[CLI] Terminating stuck process...")
+                try:
+                    process.terminate()
+                    await asyncio.wait_for(process.wait(), timeout=5)
+                except asyncio.TimeoutError:
+                    print(f"[CLI] Force killing process...")
+                    process.kill()
+                    await process.wait()
+
+                result.error_message = f"CLI process stuck: {stdout_status}"
+                if detected_prompt:
+                    result.error_message += f" (detected prompt: '{detected_prompt}')"
+                result.error_category = ErrorCategory.TRANSIENT
+                result.success = False
+                result.raw_output = "".join(stdout_chunks)
+                result.raw_error = "".join(stderr_chunks)
+                return result
+
+            # Wait for process to complete
+            await process.wait()
+
+            stdout_text = "".join(stdout_chunks)
+            stderr_text = "".join(stderr_chunks)
 
             # Store raw output for debugging
             result.raw_output = stdout_text
             result.raw_error = stderr_text
 
             # Debug: Show what we got back
-            print(f"\n[CLI DEBUG] Return code: {process.returncode}")
+            print(f"\n\n[CLI DEBUG] Return code: {process.returncode}")
             print(f"[CLI DEBUG] Stdout length: {len(stdout_text)} chars")
             print(f"[CLI DEBUG] Stderr length: {len(stderr_text)} chars")
             if stderr_text:
@@ -344,20 +483,12 @@ class AgentSession:
             if not stdout_text and not stderr_text:
                 print(f"[CLI DEBUG] No output received from CLI!")
 
-            # Print output
-            if stdout_text:
-                print(f"\n[CLI OUTPUT]\n{stdout_text}")
-
             # Check for errors
             if process.returncode != 0:
-                # Check for known error patterns
                 error_text = stderr_text or stdout_text
-
-                # Classify the error for retry logic
                 result.error_category = classify_error(error_text)
-                result.error_message = f"CLI exited with code {process.returncode}: {error_text.strip()}"
+                result.error_message = f"CLI exited with code {process.returncode}: {error_text.strip()[:500]}"
 
-                # Log based on error category
                 if result.error_category == ErrorCategory.BILLING:
                     print(f"\n[ERROR] API credits issue: {error_text}")
                 elif result.error_category == ErrorCategory.RATE_LIMIT:
@@ -366,8 +497,6 @@ class AgentSession:
                     print(f"\n[ERROR] Authentication issue: {error_text}")
                 else:
                     print(f"\n[ERROR] CLI failed (code {process.returncode}) - {result.error_category.value}")
-                    if stderr_text:
-                        print(f"[STDERR] {stderr_text}")
 
                 result.success = False
             else:
@@ -378,7 +507,6 @@ class AgentSession:
                 # Try to parse usage stats from CLI output
                 parsed_stats = CostTracker.parse_cli_output(stdout_text)
                 if parsed_stats:
-                    # Calculate cost if tokens were found
                     if parsed_stats.input_tokens or parsed_stats.output_tokens:
                         parsed_stats.cost_usd = self._cost_tracker.calculate_cost(
                             input_tokens=parsed_stats.input_tokens,

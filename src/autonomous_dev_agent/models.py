@@ -319,6 +319,10 @@ class HarnessConfig(BaseModel):
         default=100,
         description="Maximum agentic turns for CLI mode (prevents runaway sessions)"
     )
+    cli_read_timeout_seconds: int = Field(
+        default=120,
+        description="Per-chunk read timeout in seconds. If no output for this long, check if stuck."
+    )
 
     # Quality gates - defaults applied to all features unless overridden
     default_quality_gates: Optional[QualityGates] = Field(
