@@ -302,6 +302,13 @@ class AgentSession:
             print(f"[CLI] Prompt saved to: {prompt_file}")
             print(f"[CLI] Running: {' '.join(cmd_stdin)}")
 
+            # Create environment without ANTHROPIC_API_KEY to force subscription usage
+            # If ANTHROPIC_API_KEY is set, Claude CLI uses API credits instead of subscription
+            cli_env = os.environ.copy()
+            if "ANTHROPIC_API_KEY" in cli_env:
+                del cli_env["ANTHROPIC_API_KEY"]
+                print(f"[CLI] Removed ANTHROPIC_API_KEY from environment to use subscription")
+
             # Run claude CLI - use subprocess_exec directly (works with .cmd on Windows too)
             process = await asyncio.create_subprocess_exec(
                 *cmd_stdin,
@@ -309,6 +316,7 @@ class AgentSession:
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                env=cli_env,
             )
 
             # Send prompt via stdin and wait for completion
