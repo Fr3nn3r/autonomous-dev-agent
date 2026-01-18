@@ -207,7 +207,7 @@ ada discover <path> --dry-run
 
 **Goal**: Real-time visibility into agent progress and costs.
 
-**Status**: 📋 Planned
+**Status**: ✅ Complete (2026-01-18)
 
 **Tech Stack** (matching AgenticContextBuilder for consistency):
 - Vite + React 18 + TypeScript
@@ -218,12 +218,12 @@ ada discover <path> --dry-run
 
 | ID | Feature | Description | Status | Priority |
 |----|---------|-------------|--------|----------|
-| O1 | **Cost Tracking** | Track tokens (input/output/cache), calculate API cost per session and per feature. Parse CLI mode JSONL logs from `~/.claude/projects/`. Store costs in session results and backlog. Support both CLI and SDK modes. | ⏳ Pending | Critical |
-| O2 | **Adaptive Model Selection** | Default to Sonnet for most tasks, use Opus only for complex features. Per-feature model override in backlog. Complexity detection based on feature description, estimated effort, and dependencies. | ⏳ Pending | Critical |
-| O3 | **Dashboard Backend** | FastAPI server exposing ADA state via REST API. Endpoints: `/status`, `/backlog`, `/sessions`, `/progress`, `/config`. WebSocket for live updates. | ⏳ Pending | Critical |
-| O4 | **Dashboard UI** | Real-time view: current feature, session progress, backlog status, recent activity. Match AgenticContextBuilder design. | ⏳ Pending | Critical |
-| O5 | **Session History** | Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome (success/failure/handoff), feature worked on. | ⏳ Pending | High |
-| O6 | **Live Log Streaming** | WebSocket stream of progress file updates. Real-time console output in dashboard. | ⏳ Pending | High |
+| O1 | **Cost Tracking** | Track tokens (input/output/cache), calculate API cost per session and per feature. Parse CLI mode JSONL logs from `~/.claude/projects/`. Store costs in session results and backlog. Support both CLI and SDK modes. | ✅ Done | Critical |
+| O2 | **Adaptive Model Selection** | Default to Sonnet for most tasks, use Opus only for complex features. Per-feature model override in backlog. Complexity detection based on feature description, estimated effort, and dependencies. | ✅ Done | Critical |
+| O3 | **Dashboard Backend** | FastAPI server exposing ADA state via REST API. Endpoints: `/status`, `/backlog`, `/sessions`, `/progress`, `/config`. WebSocket for live updates. | ✅ Done | Critical |
+| O4 | **Dashboard UI** | Real-time view: current feature, session progress, backlog status, recent activity. Match AgenticContextBuilder design. | ✅ Done | Critical |
+| O5 | **Session History** | Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome (success/failure/handoff), feature worked on. | ✅ Done | High |
+| O6 | **Live Log Streaming** | WebSocket stream of progress file updates. Real-time console output in dashboard. | ✅ Done | High |
 | O7 | **Feature Timeline** | Visual timeline/Gantt showing feature progression across sessions. Time spent per feature. | ⏳ Pending | Medium |
 | O8 | **Cost Projections** | Estimate remaining cost based on: features pending, average cost per feature, historical data. | ⏳ Pending | Medium |
 | O9 | **Alerts/Notifications** | Desktop notifications (Windows toast) on: completion, failure, billing warning. Optional email/webhook. | ⏳ Pending | Low |
@@ -460,5 +460,5 @@ These features are available if needed later:
 | 0.1.0 | 2026-01-17 | Initial implementation: CLI, backlog, progress tracking |
 | 0.2.0 | 2026-01-18 | Dual mode (CLI/SDK), verbose logging, Windows fixes |
 | 0.3.0 | 2026-01-18 | Phase 1 reliability features (retry, test validation, resume, error classification, rollback, health checks, graceful shutdown, timeout) |
-| 0.4.0 | TBD | Phase 2 observability dashboard |
+| 0.4.0 | 2026-01-18 | Phase 2 observability dashboard (cost tracking, model selection, session history, FastAPI backend, React UI) |
 | 0.5.0 | TBD | Phase 3 verification features |
