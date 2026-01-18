@@ -1,8 +1,8 @@
-# Handoff Document - Phase 1 Implementation
+# Handoff Document - Phase 1 Complete
 
 **Date**: 2026-01-18
-**Context**: Starting fresh session for Phase 1 (Reliability) implementation
-**Previous Session**: Roadmap planning, SDK debugging, Windows fixes
+**Context**: Phase 1 (Reliability) implementation complete
+**Previous Session**: Implemented all 8 reliability features
 
 ---
 
@@ -16,7 +16,9 @@
 
 ## Current State
 
-### What's Implemented
+### What's Implemented (Phase 1 Complete)
+
+**Core Features:**
 - Two-agent pattern (initializer + coding agent)
 - JSON backlog with Pydantic validation (`feature-list.json`)
 - Progress tracking (`claude-progress.txt`)
@@ -25,264 +27,94 @@
 - Git integration (auto-commit on handoff)
 - **Dual mode**: CLI (subscription, reliable) and SDK (API credits, Windows bugs)
 - Verbose SDK logging
-- CLI commands: `ada init`, `ada run`, `ada status`, `ada add-feature`, `ada progress`, `ada import-backlog`
+
+**Phase 1 Reliability Features (All Complete):**
+- **R1: Retry Logic** - Exponential backoff with jitter, configurable via `RetryConfig`
+- **R2: Test Validation** - Run tests before marking feature complete (`test_command` config)
+- **R3: Session Resume** - Recovery from interrupted sessions (`.ada_session_state.json`)
+- **R4: Error Classification** - `ErrorCategory` enum, `classify_error()` function
+- **R5: Rollback** - `ada rollback` command with `--list`, `--revert`, `--to`, `--hard` options
+- **R6: Health Checks** - Pre-flight checks for git, CLI, disk space, backlog
+- **R7: Graceful Shutdown** - SIGINT/SIGTERM handlers, commits work and saves state
+- **R8: Session Timeout** - Configurable timeout (default 30min) forces handoff
+
+**CLI Commands:**
+```bash
+ada init <path>              # Initialize new project
+ada run <path>               # Execute agent harness
+ada status <path>            # Show backlog with colors
+ada progress <path>          # Display recent progress logs
+ada add-feature <path>       # Add task to backlog
+ada import-backlog <path>    # Convert markdown tasks to JSON
+ada rollback <path>          # Rollback to previous commit (NEW)
+```
 
 ### Key Files
 ```
 src/autonomous_dev_agent/
 ├── __init__.py
-├── cli.py          # Click CLI interface
-├── models.py       # Pydantic models (Feature, Backlog, HarnessConfig, SessionMode)
-├── harness.py      # Main orchestration loop
-├── session.py      # AgentSession class (CLI + SDK modes)
+├── cli.py          # Click CLI interface (+ rollback command)
+├── models.py       # Pydantic models (+ ErrorCategory, RetryConfig)
+├── harness.py      # Main orchestration (+ retry, health checks, shutdown)
+├── session.py      # AgentSession (+ classify_error, timeout)
 ├── progress.py     # Progress file management
-├── git_manager.py  # Git operations
+├── git_manager.py  # Git operations (+ rollback methods)
 └── prompts/        # Default prompt templates
-    ├── initializer.txt
-    ├── coding.txt
-    └── handoff.txt
 ```
 
-### Known Issues Fixed
-1. **Windows SDK exit code 1 bug** - Workaround: Use CLI mode as default
-2. **False feature completion** - SDK was marking features complete even when crashing
-3. **Prompt quoting on Windows** - Fixed by using stdin (`-p -`) instead of command line args
-
-### Known Issues Remaining
-1. No retry logic - single failure stops the harness
-2. No test validation - features marked complete without running tests
-3. No session resume - interrupted sessions lose progress
-4. Limited error handling - some errors cause infinite loops
+### Test Coverage
+- 40 tests total (10 existing + 30 new for reliability features)
+- All tests passing
 
 ---
 
-## Phase 1 Implementation Plan
-
-**Goal**: Make ADA robust and trustworthy for unattended operation on Windows.
-
-### Priority Order (implement in this sequence)
-
-#### 1. R1: Retry Logic (Critical)
-**File**: `session.py`, `harness.py`
-
-Add exponential backoff retry for failed sessions:
+## Configuration Options (New in Phase 1)
 
 ```python
-# New in models.py
-class RetryConfig(BaseModel):
-    max_retries: int = Field(default=3)
-    base_delay_seconds: float = Field(default=5.0)
-    max_delay_seconds: float = Field(default=300.0)
-    exponential_base: float = Field(default=2.0)
+class HarnessConfig(BaseModel):
+    # Existing options
+    context_threshold_percent: float = 70.0
+    session_mode: SessionMode = SessionMode.CLI
+    model: str = "claude-opus-4-5-20251101"
+    auto_commit: bool = True
 
-# Add to HarnessConfig
-retry_config: RetryConfig = Field(default_factory=RetryConfig)
-```
+    # NEW: Test validation
+    test_command: Optional[str] = None  # e.g., "pytest", "npm test"
 
-Retry only for transient errors:
-- Network errors
-- Rate limits (429)
-- SDK crash (exit code 1)
-- Timeout errors
+    # NEW: Retry configuration
+    retry: RetryConfig = RetryConfig(
+        max_retries=3,
+        base_delay_seconds=5.0,
+        max_delay_seconds=300.0,
+        exponential_base=2.0,
+        jitter_factor=0.1
+    )
 
-Do NOT retry:
-- Billing errors (out of credits)
-- Auth errors (invalid API key)
-- Permanent failures
-
-#### 2. R4: Error Classification (Critical - enables R1)
-**File**: `session.py`
-
-Create error categories:
-
-```python
-class ErrorCategory(str, Enum):
-    TRANSIENT = "transient"      # Network, timeout - retry
-    RATE_LIMIT = "rate_limit"    # 429 - retry with longer delay
-    SDK_CRASH = "sdk_crash"      # Exit code 1 - retry
-    BILLING = "billing"          # Out of credits - stop
-    AUTH = "auth"                # Invalid API key - stop
-    UNKNOWN = "unknown"          # Unexpected - retry once, then stop
-
-class ClassifiedError(BaseModel):
-    category: ErrorCategory
-    message: str
-    retryable: bool
-    original_error: Optional[str] = None
-```
-
-Update `SessionResult` to include error classification.
-
-#### 3. R2: Test Validation (Critical)
-**File**: `harness.py`, `models.py`
-
-Add test command to config:
-
-```python
-# In HarnessConfig
-test_command: Optional[str] = Field(
-    default=None,
-    description="Command to run tests (e.g., 'npm test', 'pytest')"
-)
-run_tests_before_complete: bool = Field(default=True)
-```
-
-In harness loop:
-1. After session completes successfully
-2. If feature appears complete, run `test_command`
-3. If tests pass: mark feature complete
-4. If tests fail: keep as `in_progress`, add failure note, increment sessions_spent
-
-#### 4. R7: Graceful Shutdown (High)
-**File**: `harness.py`
-
-Handle Ctrl+C properly:
-
-```python
-import signal
-
-class AutonomousHarness:
-    def __init__(self, ...):
-        self._shutdown_requested = False
-        signal.signal(signal.SIGINT, self._handle_shutdown)
-
-    def _handle_shutdown(self, signum, frame):
-        print("\n[HARNESS] Shutdown requested, finishing current work...")
-        self._shutdown_requested = True
-
-    async def run(self):
-        while not self._shutdown_requested and ...:
-            # ... session loop
-            if self._shutdown_requested:
-                await self._graceful_shutdown()
-                break
-
-    async def _graceful_shutdown(self):
-        # 1. Write handoff notes
-        # 2. Commit any uncommitted changes
-        # 3. Save session state
-        # 4. Print summary
-```
-
-#### 5. R3: Session Resume (High)
-**File**: `session.py`, `harness.py`
-
-Enhance `.ada_session_state.json`:
-
-```python
-class SessionState(BaseModel):
-    session_id: str
-    started_at: datetime
-    current_feature_id: Optional[str] = None
-    context_usage_percent: float = 0.0
-    last_commit_hash: Optional[str] = None
-    handoff_notes: Optional[str] = None
-    # New fields:
-    retry_count: int = 0
-    last_error: Optional[str] = None
-    partial_work_description: Optional[str] = None
-```
-
-On startup:
-1. Check for existing session state
-2. If exists, prompt: "Resume previous session? (y/n)"
-3. If resume: load state, continue from checkpoint
-4. If not: clear state, start fresh
-
-#### 6. R5: Rollback Capability (High)
-**File**: `git_manager.py`, `harness.py`
-
-Add rollback function:
-
-```python
-def get_last_good_commit(self) -> Optional[str]:
-    """Find last commit before current session started."""
-    ...
-
-def rollback_to_commit(self, commit_hash: str) -> bool:
-    """Reset to a previous commit (with confirmation)."""
-    ...
-```
-
-Trigger rollback if:
-- Tests fail after session
-- User requests via CLI flag `--rollback`
-
-#### 7. R6: Health Checks (Medium)
-**File**: `harness.py`
-
-Pre-flight checks before starting:
-
-```python
-async def _run_health_checks(self) -> list[str]:
-    errors = []
-
-    # Check API connectivity
-    if not await self._check_api_connectivity():
-        errors.append("Cannot connect to Claude API")
-
-    # Check git status
-    if self._has_uncommitted_changes():
-        errors.append("Uncommitted changes in git - commit or stash first")
-
-    # Check required tools
-    if not self._find_claude_executable():
-        errors.append("Claude CLI not found in PATH")
-
-    # Check disk space (Windows)
-    if self._get_free_disk_space() < 1_000_000_000:  # 1GB
-        errors.append("Low disk space (<1GB)")
-
-    return errors
-```
-
-#### 8. R8: Session Timeout (Medium)
-**File**: `session.py`, `models.py`
-
-Add timeout config:
-
-```python
-# In HarnessConfig
-session_timeout_minutes: int = Field(
-    default=30,
-    description="Max duration per session before forced handoff"
-)
-```
-
-Implement with asyncio timeout:
-
-```python
-async def run(self, prompt: str, ...) -> SessionResult:
-    timeout = self.config.session_timeout_minutes * 60
-    try:
-        async with asyncio.timeout(timeout):
-            return await self._run_session(prompt, ...)
-    except asyncio.TimeoutError:
-        return self._handle_timeout()
+    # NEW: Session timeout
+    session_timeout_seconds: int = 1800  # 30 minutes
 ```
 
 ---
 
-## Testing Strategy
+## Next Steps: Phase 2 (Observability)
 
-Run tests after each feature:
+**Goal**: Real-time visibility into agent progress and costs.
 
-```bash
-# Run all tests
-pytest tests/ -v
+See `docs/ROADMAP.md` for full details. Key features:
 
-# Run specific test
-pytest tests/test_models.py -v
+| ID | Feature | Description | Priority |
+|----|---------|-------------|----------|
+| O1 | **Cost Tracking** | Track tokens, calculate API cost per session/feature | Critical |
+| O2 | **Dashboard Backend** | FastAPI server exposing ADA state via REST/WebSocket | Critical |
+| O3 | **Dashboard UI** | Real-time view of progress, backlog, sessions | Critical |
+| O4 | **Session History** | Persistent log of all sessions | High |
+| O5 | **Live Log Streaming** | WebSocket stream of progress updates | High |
 
-# Test with coverage
-pytest tests/ --cov=autonomous_dev_agent --cov-report=term-missing
-```
-
-Test files to create/update:
-- `tests/test_retry.py` - Retry logic tests
-- `tests/test_error_classification.py` - Error categorization
-- `tests/test_session_resume.py` - Resume functionality
-- `tests/test_graceful_shutdown.py` - Signal handling
+**Tech Stack for Dashboard:**
+- Vite + React 18 + TypeScript
+- Tailwind CSS + shadcn/ui
+- FastAPI backend
+- WebSocket for live updates
 
 ---
 
@@ -295,28 +127,20 @@ pip install -e ".[dev]"
 # Run harness (CLI mode - default, recommended)
 ada run C:\path\to\project
 
-# Run harness (SDK mode - has Windows issues)
-ada run C:\path\to\project --mode sdk
+# Run with test validation
+ada run C:\path\to\project --test-command "pytest"
 
 # Check status
 ada status C:\path\to\project
 
 # View progress
 ada progress C:\path\to\project --lines 50
+
+# Rollback options
+ada rollback C:\path\to\project --list      # List recent commits
+ada rollback C:\path\to\project --revert    # Revert last commit
+ada rollback C:\path\to\project --to abc123 # Reset to specific commit
 ```
-
----
-
-## Related Projects
-
-**OwlAI Chatbot** (`C:\Users\fbrun\Documents\GitHub\owlai-chatbot`)
-- Test project being developed BY ADA
-- Currently has 20 features completed, 8 pending
-- Uses: Vite + React + TypeScript + Tailwind + shadcn/ui
-
-**AgenticContextBuilder** (reference for dashboard)
-- Same tech stack to use for Phase 2 dashboard
-- Theming: Northern Lights, Default, Pink + Light/Dark mode
 
 ---
 
@@ -326,21 +150,15 @@ ada progress C:\path\to\project --lines 50
 - `CLAUDE.md` - Instructions for Claude Code sessions
 - `docs/DESIGN.md` - Architecture decisions and research sources
 - `docs/SOURCES.md` - Anthropic research references
-- `docs/ROADMAP.md` - Full roadmap with all phases
+- `docs/ROADMAP.md` - Full roadmap with all phases (Phase 1 marked complete)
 
 ---
 
-## Next Steps
+## Commit History (Phase 1)
 
-1. Read this handoff document
-2. Review `docs/ROADMAP.md` for full Phase 1 details
-3. Start with R1 (Retry Logic) and R4 (Error Classification) together
-4. Test each feature before moving to next
-5. Commit frequently with descriptive messages
-
-**Commit prefix convention**:
-- `fix:` - Bug fix
-- `feat:` - New feature
-- `refactor:` - Code restructure
-- `test:` - Adding tests
-- `docs:` - Documentation
+```
+1c24161 feat: implement Phase 1 reliability features for unattended operation
+a3f39ab docs: add roadmap and handoff for Phase 1 implementation
+db6920c fix: switch default mode to CLI for Windows reliability
+ad22caf feat: add verbose SDK message logging
+```

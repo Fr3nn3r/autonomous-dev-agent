@@ -20,18 +20,18 @@ This roadmap prioritizes reliability and observability over scalability. The goa
 
 **Goal**: Make ADA robust and trustworthy for unattended operation on Windows.
 
-**Status**: 🔄 In Progress
+**Status**: ✅ Complete (2026-01-18)
 
 | ID | Feature | Description | Status | Priority |
 |----|---------|-------------|--------|----------|
-| R1 | **Retry Logic** | Retry failed sessions with exponential backoff. Configurable max retries (default: 3). Distinguish between retryable errors (network, rate limit, SDK crash) and permanent errors (auth, billing). | ⏳ Pending | Critical |
-| R2 | **Test Validation** | Run project tests before marking features complete. If tests fail, keep feature as in_progress and log the failure. Configurable test command per project. | ⏳ Pending | Critical |
-| R3 | **Session Resume** | Save session checkpoints to `.ada_session_state.json`. On restart, offer to resume from last checkpoint or start fresh. Track partial progress within features. | ⏳ Pending | High |
-| R4 | **Error Classification** | Classify errors into categories: `transient` (retry), `billing` (stop, notify), `auth` (stop, notify), `unknown` (retry with backoff). Already partially implemented for SDK errors. | ⏳ Pending | High |
-| R5 | **Rollback Capability** | If tests fail after a session, offer to rollback to last known good commit. Use git reflog for safety. Never auto-rollback without confirmation in interactive mode. | ⏳ Pending | High |
-| R6 | **Health Checks** | Pre-flight checks before starting: API connectivity, git clean status, disk space, required tools installed. Fail fast with clear error messages. | ⏳ Pending | Medium |
-| R7 | **Graceful Shutdown** | Handle Ctrl+C (SIGINT) cleanly: commit current work, write handoff notes to progress file, save session state, exit cleanly. Partially implemented. | ⏳ Pending | Medium |
-| R8 | **Session Timeout** | Configurable max duration per session (default: 30 minutes). Prevents runaway sessions. Triggers clean handoff when timeout approaches. | ⏳ Pending | Medium |
+| R1 | **Retry Logic** | Retry failed sessions with exponential backoff. Configurable max retries (default: 3). Distinguish between retryable errors (network, rate limit, SDK crash) and permanent errors (auth, billing). | ✅ Done | Critical |
+| R2 | **Test Validation** | Run project tests before marking features complete. If tests fail, keep feature as in_progress and log the failure. Configurable test command per project. | ✅ Done | Critical |
+| R3 | **Session Resume** | Save session checkpoints to `.ada_session_state.json`. On restart, offer to resume from last checkpoint or start fresh. Track partial progress within features. | ✅ Done | High |
+| R4 | **Error Classification** | Classify errors into categories: `transient` (retry), `billing` (stop, notify), `auth` (stop, notify), `unknown` (retry with backoff). Already partially implemented for SDK errors. | ✅ Done | High |
+| R5 | **Rollback Capability** | If tests fail after a session, offer to rollback to last known good commit. Use git reflog for safety. Never auto-rollback without confirmation in interactive mode. | ✅ Done | High |
+| R6 | **Health Checks** | Pre-flight checks before starting: API connectivity, git clean status, disk space, required tools installed. Fail fast with clear error messages. | ✅ Done | Medium |
+| R7 | **Graceful Shutdown** | Handle Ctrl+C (SIGINT) cleanly: commit current work, write handoff notes to progress file, save session state, exit cleanly. Partially implemented. | ✅ Done | Medium |
+| R8 | **Session Timeout** | Configurable max duration per session (default: 30 minutes). Prevents runaway sessions. Triggers clean handoff when timeout approaches. | ✅ Done | Medium |
 
 ### Phase 1 Implementation Notes
 
@@ -214,6 +214,6 @@ These features are available if needed later:
 |---------|------|---------|
 | 0.1.0 | 2026-01-17 | Initial implementation: CLI, backlog, progress tracking |
 | 0.2.0 | 2026-01-18 | Dual mode (CLI/SDK), verbose logging, Windows fixes |
-| 0.3.0 | TBD | Phase 1 reliability features |
+| 0.3.0 | 2026-01-18 | Phase 1 reliability features (retry, test validation, resume, error classification, rollback, health checks, graceful shutdown, timeout) |
 | 0.4.0 | TBD | Phase 2 observability dashboard |
 | 0.5.0 | TBD | Phase 3 verification features |
