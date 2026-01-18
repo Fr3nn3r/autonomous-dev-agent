@@ -9,9 +9,14 @@ This is the core engine that:
 
 import asyncio
 import json
+import random
+import shutil
+import signal
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Tuple, List
 
 from rich.console import Console
 from rich.panel import Panel
@@ -19,7 +24,7 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .models import (
     Backlog, Feature, FeatureStatus, HarnessConfig,
-    SessionState, ProgressEntry
+    SessionState, ProgressEntry, ErrorCategory, RetryConfig
 )
 from .progress import ProgressTracker
 from .git_manager import GitManager
@@ -55,6 +60,255 @@ class AutonomousHarness:
         # State
         self.initialized = False
         self.total_sessions = 0
+        self._shutdown_requested = False
+        self._current_feature: Optional[Feature] = None
+
+    def _setup_signal_handlers(self) -> None:
+        """Set up signal handlers for graceful shutdown."""
+        # Note: On Windows, only SIGINT (Ctrl+C) is supported
+        signal.signal(signal.SIGINT, self._handle_shutdown_signal)
+
+        # SIGTERM is not available on Windows
+        if sys.platform != "win32":
+            signal.signal(signal.SIGTERM, self._handle_shutdown_signal)
+
+    def _handle_shutdown_signal(self, signum: int, frame: Any) -> None:
+        """Handle shutdown signal by setting flag."""
+        signal_name = signal.Signals(signum).name if hasattr(signal, 'Signals') else str(signum)
+        console.print(f"\n[yellow]Shutdown signal received ({signal_name}) - finishing current work...[/yellow]")
+        self._shutdown_requested = True
+
+    async def _graceful_shutdown(self) -> None:
+        """Perform graceful shutdown - commit current work, save state, exit cleanly."""
+        console.print("\n[yellow]Performing graceful shutdown...[/yellow]")
+
+        # Commit any uncommitted changes
+        git_status = self.git.get_status()
+        commit_hash = None
+
+        if git_status.has_changes:
+            console.print("[yellow]Committing uncommitted changes...[/yellow]")
+            self.git.stage_all()
+            commit_hash = self.git.commit(
+                "wip: interrupted by shutdown signal\n\n"
+                "Auto-committed by autonomous-dev-agent during shutdown.\n"
+                f"Feature in progress: {self._current_feature.name if self._current_feature else 'unknown'}"
+            )
+            if commit_hash:
+                console.print(f"[green]Committed:[/green] {commit_hash[:8]}")
+
+        # Log the shutdown
+        self.progress.append_entry(ProgressEntry(
+            session_id=self.sessions.current_session.session_id if self.sessions.current_session else "shutdown",
+            feature_id=self._current_feature.id if self._current_feature else None,
+            action="shutdown",
+            summary="Graceful shutdown initiated by user signal",
+            commit_hash=commit_hash
+        ))
+
+        # Save session state for recovery
+        if self.sessions.current_session and self._current_feature:
+            self._save_session_state(
+                self.sessions.current_session,
+                self._current_feature,
+                handoff_notes="Session interrupted by shutdown signal"
+            )
+            console.print("[green]Session state saved for recovery[/green]")
+
+        console.print("[green]Shutdown complete.[/green]")
+
+    async def _run_health_checks(self) -> Tuple[List[str], List[str]]:
+        """Run pre-flight health checks.
+
+        Returns:
+            Tuple of (fatal_errors, warnings)
+        """
+        errors: List[str] = []
+        warnings: List[str] = []
+
+        console.print("\n[blue]Running health checks...[/blue]")
+
+        # 1. Check if git repo exists
+        if not self.git.is_git_repo():
+            errors.append("Not a git repository")
+        else:
+            console.print("  [green]✓[/green] Git repository found")
+
+            # Check for uncommitted changes
+            git_status = self.git.get_status()
+            if git_status.has_changes:
+                warnings.append(
+                    f"Uncommitted changes: {len(git_status.modified_files)} modified, "
+                    f"{len(git_status.untracked_files)} untracked"
+                )
+
+        # 2. Check Claude CLI
+        claude_path = shutil.which("claude")
+        if not claude_path and sys.platform == "win32":
+            claude_path = shutil.which("claude.cmd")
+
+        if claude_path:
+            console.print(f"  [green]✓[/green] Claude CLI found: {claude_path}")
+        else:
+            errors.append("Claude CLI not found in PATH")
+
+        # 3. Check backlog file exists and is valid
+        backlog_path = self.project_path / self.config.backlog_file
+        if not backlog_path.exists():
+            errors.append(f"Backlog file not found: {backlog_path}")
+        else:
+            try:
+                data = json.loads(backlog_path.read_text())
+                Backlog.model_validate(data)
+                console.print(f"  [green]✓[/green] Backlog file valid: {backlog_path.name}")
+            except json.JSONDecodeError as e:
+                errors.append(f"Backlog file is not valid JSON: {e}")
+            except Exception as e:
+                errors.append(f"Backlog file validation failed: {e}")
+
+        # 4. Check disk space (>100MB free)
+        try:
+            if sys.platform == "win32":
+                import ctypes
+                free_bytes = ctypes.c_ulonglong(0)
+                ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+                    str(self.project_path),
+                    None,
+                    None,
+                    ctypes.pointer(free_bytes)
+                )
+                free_mb = free_bytes.value / (1024 * 1024)
+            else:
+                import os
+                stat = os.statvfs(self.project_path)
+                free_mb = (stat.f_bavail * stat.f_frsize) / (1024 * 1024)
+
+            if free_mb < 100:
+                errors.append(f"Low disk space: {free_mb:.0f}MB free (need >100MB)")
+            else:
+                console.print(f"  [green]✓[/green] Disk space: {free_mb:.0f}MB free")
+        except Exception as e:
+            warnings.append(f"Could not check disk space: {e}")
+
+        # 5. Check required tools
+        for tool in ["git", "python"]:
+            if shutil.which(tool):
+                console.print(f"  [green]✓[/green] {tool} found")
+            else:
+                errors.append(f"Required tool not found: {tool}")
+
+        # 6. Check ANTHROPIC_API_KEY if using SDK mode
+        if self.config.session_mode.value == "sdk":
+            import os
+            if os.environ.get("ANTHROPIC_API_KEY"):
+                console.print("  [green]✓[/green] ANTHROPIC_API_KEY set")
+            else:
+                warnings.append("ANTHROPIC_API_KEY not set (required for SDK mode)")
+
+        # Print warnings
+        for warning in warnings:
+            console.print(f"  [yellow]![/yellow] {warning}")
+
+        return errors, warnings
+
+    def _calculate_retry_delay(self, attempt: int, retry_config: RetryConfig) -> float:
+        """Calculate delay for exponential backoff with jitter.
+
+        Args:
+            attempt: Current retry attempt (0-indexed)
+            retry_config: Retry configuration
+
+        Returns:
+            Delay in seconds
+        """
+        # Exponential backoff: base_delay * (exponential_base ^ attempt)
+        delay = retry_config.base_delay_seconds * (
+            retry_config.exponential_base ** attempt
+        )
+
+        # Cap at max delay
+        delay = min(delay, retry_config.max_delay_seconds)
+
+        # Add jitter (+/- jitter_factor)
+        jitter = delay * retry_config.jitter_factor
+        delay += random.uniform(-jitter, jitter)
+
+        return max(0, delay)  # Never negative
+
+    async def _run_tests(self) -> Tuple[bool, str]:
+        """Run the configured test command.
+
+        Returns:
+            Tuple of (success, output_message)
+        """
+        if not self.config.test_command:
+            return True, "No test command configured"
+
+        console.print(f"\n[blue]Running tests:[/blue] {self.config.test_command}")
+
+        try:
+            # Run the test command
+            result = subprocess.run(
+                self.config.test_command,
+                shell=True,
+                cwd=self.project_path,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minute timeout for tests
+            )
+
+            if result.returncode == 0:
+                console.print("[green]Tests passed![/green]")
+                return True, "Tests passed"
+            else:
+                console.print(f"[red]Tests failed (exit code {result.returncode})[/red]")
+                output = result.stdout + result.stderr
+                # Truncate output for display
+                if len(output) > 1000:
+                    output = output[:1000] + "\n... (truncated)"
+                console.print(f"[dim]{output}[/dim]")
+                return False, f"Tests failed (exit {result.returncode}): {output[:500]}"
+
+        except subprocess.TimeoutExpired:
+            console.print("[red]Tests timed out after 5 minutes[/red]")
+            return False, "Tests timed out after 5 minutes"
+        except Exception as e:
+            console.print(f"[red]Error running tests: {e}[/red]")
+            return False, f"Error running tests: {e}"
+
+    def _should_retry(
+        self,
+        result: SessionResult,
+        attempt: int,
+        retry_config: RetryConfig
+    ) -> bool:
+        """Determine if we should retry based on error category.
+
+        Args:
+            result: The session result with error info
+            attempt: Current retry attempt (0-indexed)
+            retry_config: Retry configuration
+
+        Returns:
+            True if we should retry, False otherwise
+        """
+        # Don't retry if we've exhausted attempts
+        if attempt >= retry_config.max_retries:
+            return False
+
+        # Don't retry successful sessions or handoffs
+        if result.success or result.handoff_requested:
+            return False
+
+        # Check if the error category is retryable
+        if result.error_category and result.error_category in retry_config.retryable_categories:
+            return True
+
+        # For UNKNOWN errors, retry once
+        if result.error_category == ErrorCategory.UNKNOWN and attempt == 0:
+            return True
+
+        return False
 
     def load_backlog(self) -> Backlog:
         """Load the feature backlog from JSON file."""
@@ -170,6 +424,9 @@ class AutonomousHarness:
         session = self.sessions.create_session()
         self.progress.log_session_start(session.session_id, feature)
 
+        # Save session state for recovery
+        self._save_session_state(session, feature)
+
         # Run the agent
         result = await session.run(prompt, on_message=self._on_message)
 
@@ -177,7 +434,10 @@ class AutonomousHarness:
         if result.handoff_requested:
             await self._perform_handoff(session, feature, result)
         elif result.feature_completed or result.success:
-            self._complete_feature(session, feature, result)
+            completed = await self._complete_feature(session, feature, result)
+            if not completed:
+                # Tests failed - feature remains in_progress
+                result.feature_completed = False
 
         return result
 
@@ -220,15 +480,53 @@ class AutonomousHarness:
         )
         self.save_backlog()
 
+        # Update session state with handoff notes for recovery
+        self._save_session_state(
+            session,
+            feature,
+            context_percent=result.context_usage_percent,
+            handoff_notes=f"Continue implementing {feature.name}"
+        )
+
         console.print(f"[green]OK[/green] Handoff complete. Commit: {commit_hash or 'no changes'}")
 
-    def _complete_feature(
+    async def _complete_feature(
         self,
         session: AgentSession,
         feature: Feature,
         result: SessionResult
-    ) -> None:
-        """Mark a feature as completed."""
+    ) -> bool:
+        """Validate and mark a feature as completed.
+
+        Runs tests if configured before marking complete.
+
+        Returns:
+            True if feature was completed, False if tests failed
+        """
+        # Run tests if configured
+        tests_passed, test_message = await self._run_tests()
+
+        if not tests_passed:
+            # Tests failed - do not complete the feature
+            console.print(f"[yellow]Feature not completed - tests failed[/yellow]")
+
+            # Log the test failure
+            self.progress.append_entry(ProgressEntry(
+                session_id=session.session_id,
+                feature_id=feature.id,
+                action="tests_failed",
+                summary=f"Tests failed: {test_message}"
+            ))
+
+            # Add note to feature
+            self.backlog.add_implementation_note(
+                feature.id,
+                f"Session {session.session_id}: Tests failed - {test_message}"
+            )
+            self.save_backlog()
+
+            return False
+
         # Get commit info
         git_status = self.git.get_status()
         commit_hash = git_status.last_commit_hash
@@ -248,7 +546,63 @@ class AutonomousHarness:
         )
         self.save_backlog()
 
+        # Clear session state - no longer need recovery
+        session.clear_state()
+
         console.print(f"[green]OK[/green] Feature completed: {feature.name}")
+        return True
+
+    async def _run_coding_session_with_retry(self, feature: Feature) -> SessionResult:
+        """Run a coding session with automatic retry on transient errors.
+
+        Args:
+            feature: The feature to work on
+
+        Returns:
+            SessionResult from the final attempt
+        """
+        retry_config = self.config.retry
+        last_result: Optional[SessionResult] = None
+
+        for attempt in range(retry_config.max_retries + 1):
+            if attempt > 0:
+                # Log retry attempt
+                delay = self._calculate_retry_delay(attempt - 1, retry_config)
+                category = last_result.error_category.value if last_result and last_result.error_category else "unknown"
+
+                console.print(f"\n[yellow]Retry {attempt}/{retry_config.max_retries}[/yellow] "
+                             f"- Error: {category} - Waiting {delay:.1f}s...")
+
+                # Log to progress file
+                self.progress.append_entry(ProgressEntry(
+                    session_id=f"retry_{attempt}",
+                    feature_id=feature.id,
+                    action="retry_attempt",
+                    summary=f"Retry attempt {attempt} after {category} error, waiting {delay:.1f}s"
+                ))
+
+                await asyncio.sleep(delay)
+
+            # Run the session
+            result = await self.run_coding_session(feature)
+            last_result = result
+
+            # Check if we should retry
+            if not self._should_retry(result, attempt, retry_config):
+                return result
+
+            # Log the failure before retrying
+            console.print(f"[yellow]Session failed ({result.error_category.value if result.error_category else 'unknown'}): "
+                         f"{result.error_message}[/yellow]")
+
+        # Should not reach here, but return last result if we do
+        return last_result or SessionResult(
+            session_id="retry_exhausted",
+            success=False,
+            context_usage_percent=0.0,
+            error_message="Retry attempts exhausted",
+            error_category=ErrorCategory.UNKNOWN
+        )
 
     def _on_message(self, message: Any) -> None:
         """Handle streaming messages from the agent."""
@@ -256,13 +610,77 @@ class AutonomousHarness:
         if hasattr(message, 'text'):
             console.print(message.text, end="")
 
+    async def _check_for_recovery(self) -> Optional[str]:
+        """Check for interrupted session and prompt for recovery.
+
+        Returns:
+            Feature ID to resume, or None to start fresh
+        """
+        recovery_state = self.sessions.get_recovery_state()
+
+        if not recovery_state:
+            return None
+
+        if not recovery_state.current_feature_id:
+            # Clear stale state with no feature
+            self.sessions.current_session = self.sessions.create_session()
+            self.sessions.current_session.clear_state()
+            return None
+
+        # Found interrupted session
+        console.print(Panel(
+            f"[yellow]Previous session interrupted[/yellow]\n"
+            f"Session: {recovery_state.session_id}\n"
+            f"Feature: {recovery_state.current_feature_id}\n"
+            f"Context: {recovery_state.context_usage_percent:.1f}%\n"
+            f"Started: {recovery_state.started_at}",
+            title="Recovery"
+        ))
+
+        # For now, auto-resume (in future, could prompt user)
+        console.print("[green]Resuming interrupted session...[/green]")
+        return recovery_state.current_feature_id
+
+    def _save_session_state(
+        self,
+        session: AgentSession,
+        feature: Feature,
+        context_percent: float = 0.0,
+        handoff_notes: Optional[str] = None
+    ) -> None:
+        """Save session state for recovery."""
+        state = SessionState(
+            session_id=session.session_id,
+            current_feature_id=feature.id,
+            context_usage_percent=context_percent,
+            last_commit_hash=self.git.get_status().last_commit_hash,
+            handoff_notes=handoff_notes
+        )
+        session.save_state(state)
+
     async def run(self) -> None:
         """Main entry point - run until backlog is complete."""
+        # Set up signal handlers for graceful shutdown
+        self._setup_signal_handlers()
+
         console.print(Panel(
             f"[bold]Autonomous Development Agent[/bold]\n"
             f"Project: {self.project_path.name}",
             title="ADA Harness"
         ))
+
+        # Run health checks
+        errors, warnings = await self._run_health_checks()
+
+        if errors:
+            console.print("\n[red]Health check failed:[/red]")
+            for error in errors:
+                console.print(f"  [red]✗[/red] {error}")
+            console.print("\n[red]Cannot proceed. Fix the issues above and try again.[/red]")
+            return
+
+        if warnings:
+            console.print(f"\n[yellow]{len(warnings)} warning(s) - proceeding anyway[/yellow]")
 
         # Load backlog
         try:
@@ -271,7 +689,10 @@ class AutonomousHarness:
             console.print(f"[red]Error:[/red] {e}")
             return
 
-        console.print(f"Loaded {len(self.backlog.features)} features")
+        console.print(f"\nLoaded {len(self.backlog.features)} features")
+
+        # Check for recovery from interrupted session
+        recovery_feature_id = await self._check_for_recovery()
 
         # Check if initialization needed
         progress_exists = (self.project_path / self.config.progress_file).exists()
@@ -284,23 +705,42 @@ class AutonomousHarness:
 
         # Main loop
         while not self.backlog.is_complete() and self.sessions.should_continue():
+            # Check for shutdown request
+            if self._shutdown_requested:
+                await self._graceful_shutdown()
+                return
+
             feature = self.backlog.get_next_feature()
 
             if not feature:
                 console.print("[yellow]No eligible features to work on (check dependencies)[/yellow]")
                 break
 
+            # Track current feature for shutdown handling
+            self._current_feature = feature
+
             console.print(f"\n{'='*60}")
             console.print(f"Session {self.total_sessions + 1}")
             console.print(f"{'='*60}")
 
-            result = await self.run_coding_session(feature)
+            result = await self._run_coding_session_with_retry(feature)
             self.total_sessions += 1
 
+            # Check for shutdown after session
+            if self._shutdown_requested:
+                await self._graceful_shutdown()
+                return
+
             if not result.success and not result.handoff_requested:
-                console.print(f"[red]Session failed: {result.error_message}[/red]")
-                # Continue to next feature or retry logic could go here
-                continue
+                # Check if it's a non-retryable error
+                if result.error_category in (ErrorCategory.BILLING, ErrorCategory.AUTH):
+                    console.print(f"[red]Fatal error ({result.error_category.value}): {result.error_message}[/red]")
+                    console.print("[red]Stopping due to non-recoverable error.[/red]")
+                    break
+                else:
+                    console.print(f"[red]Session failed after retries: {result.error_message}[/red]")
+                    # Continue to next feature
+                    continue
 
             # Brief pause between sessions
             await asyncio.sleep(2)

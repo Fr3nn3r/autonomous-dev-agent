@@ -145,3 +145,85 @@ class GitManager:
             return []
 
         return result.stdout.strip().split("\n")
+
+    def get_commits_since(self, commit_hash: str) -> list[tuple[str, str]]:
+        """Get all commits since a given commit hash.
+
+        Args:
+            commit_hash: The commit hash to start from (exclusive)
+
+        Returns:
+            List of (hash, message) tuples, newest first
+        """
+        result = self._run(
+            "log",
+            f"{commit_hash}..HEAD",
+            "--format=%H|%s",
+            check=False
+        )
+
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+
+        commits = []
+        for line in result.stdout.strip().split("\n"):
+            if "|" in line:
+                hash_, message = line.split("|", 1)
+                commits.append((hash_, message))
+
+        return commits
+
+    def reset_to_commit(self, commit_hash: str, hard: bool = False) -> bool:
+        """Reset to a previous commit.
+
+        Args:
+            commit_hash: The commit to reset to
+            hard: If True, discard all changes. If False (default), keep changes staged.
+
+        Returns:
+            True if successful, False otherwise
+        """
+        mode = "--hard" if hard else "--soft"
+        result = self._run("reset", mode, commit_hash, check=False)
+        return result.returncode == 0
+
+    def revert_last_commit(self) -> Optional[str]:
+        """Create a revert commit for the last commit.
+
+        Returns:
+            The new commit hash if successful, None otherwise
+        """
+        result = self._run("revert", "HEAD", "--no-edit", check=False)
+
+        if result.returncode != 0:
+            return None
+
+        # Get the new commit hash
+        hash_result = self._run("rev-parse", "HEAD", check=False)
+        return hash_result.stdout.strip() if hash_result.returncode == 0 else None
+
+    def get_commit_info(self, commit_hash: str) -> Optional[tuple[str, str, str]]:
+        """Get info about a specific commit.
+
+        Args:
+            commit_hash: The commit hash to look up
+
+        Returns:
+            Tuple of (hash, message, date) or None if not found
+        """
+        result = self._run(
+            "log",
+            "-1",
+            "--format=%H|%s|%ci",
+            commit_hash,
+            check=False
+        )
+
+        if result.returncode != 0 or not result.stdout.strip():
+            return None
+
+        parts = result.stdout.strip().split("|")
+        if len(parts) >= 3:
+            return (parts[0], parts[1], parts[2])
+
+        return None

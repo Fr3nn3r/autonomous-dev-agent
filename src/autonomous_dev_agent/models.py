@@ -19,6 +19,19 @@ class FeatureStatus(str, Enum):
     BLOCKED = "blocked"
 
 
+class ErrorCategory(str, Enum):
+    """Classification of errors for retry decisions.
+
+    Categories determine whether to retry and how long to wait.
+    """
+    TRANSIENT = "transient"      # Network, timeout - retry with short delay
+    RATE_LIMIT = "rate_limit"    # 429 - retry with longer delay
+    SDK_CRASH = "sdk_crash"      # Windows exit code 1 - retry
+    BILLING = "billing"          # Out of credits - stop
+    AUTH = "auth"                # Invalid API key - stop
+    UNKNOWN = "unknown"          # Unexpected - retry once, then stop
+
+
 class FeatureCategory(str, Enum):
     """Category of feature work."""
     FUNCTIONAL = "functional"
@@ -159,6 +172,41 @@ class SessionMode(str, Enum):
     SDK = "sdk"      # Claude Agent SDK (uses API credits, streaming but less reliable on Windows)
 
 
+class RetryConfig(BaseModel):
+    """Configuration for retry logic with exponential backoff.
+
+    Used by the harness to handle transient errors automatically.
+    """
+    max_retries: int = Field(
+        default=3,
+        description="Maximum retry attempts before giving up"
+    )
+    base_delay_seconds: float = Field(
+        default=5.0,
+        description="Initial delay between retries"
+    )
+    max_delay_seconds: float = Field(
+        default=300.0,
+        description="Maximum delay between retries (5 minutes)"
+    )
+    exponential_base: float = Field(
+        default=2.0,
+        description="Multiplier for exponential backoff"
+    )
+    jitter_factor: float = Field(
+        default=0.1,
+        description="Random jitter factor (0.1 = +/- 10%)"
+    )
+    retryable_categories: list[ErrorCategory] = Field(
+        default_factory=lambda: [
+            ErrorCategory.TRANSIENT,
+            ErrorCategory.RATE_LIMIT,
+            ErrorCategory.SDK_CRASH,
+        ],
+        description="Error categories that should be retried"
+    )
+
+
 class HarnessConfig(BaseModel):
     """Configuration for the harness."""
     # Context management
@@ -190,6 +238,24 @@ class HarnessConfig(BaseModel):
     max_sessions: Optional[int] = Field(
         default=None,
         description="Maximum sessions before stopping (None = unlimited)"
+    )
+
+    # Testing
+    test_command: Optional[str] = Field(
+        default=None,
+        description="Command to run tests before marking feature complete (e.g., 'pytest', 'npm test')"
+    )
+
+    # Retry configuration
+    retry: RetryConfig = Field(
+        default_factory=RetryConfig,
+        description="Retry configuration for transient errors"
+    )
+
+    # Session timeout
+    session_timeout_seconds: int = Field(
+        default=1800,  # 30 minutes
+        description="Maximum duration per session before forced handoff"
     )
 
     # SDK permissions (only used in SDK mode)

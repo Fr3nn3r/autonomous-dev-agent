@@ -19,7 +19,7 @@ from typing import Optional, Callable, Any
 
 from pydantic import BaseModel
 
-from .models import HarnessConfig, SessionState, Feature, SessionMode
+from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory
 
 
 class SessionResult(BaseModel):
@@ -28,6 +28,7 @@ class SessionResult(BaseModel):
     success: bool
     context_usage_percent: float
     error_message: Optional[str] = None
+    error_category: Optional[ErrorCategory] = None
     feature_completed: bool = False
     handoff_requested: bool = False
     summary: Optional[str] = None
@@ -35,6 +36,80 @@ class SessionResult(BaseModel):
     # New: capture raw output for debugging
     raw_output: Optional[str] = None
     raw_error: Optional[str] = None
+
+
+def classify_error(error_text: str) -> ErrorCategory:
+    """Classify an error message to determine retry strategy.
+
+    Args:
+        error_text: The error message or output to classify
+
+    Returns:
+        ErrorCategory indicating what type of error occurred
+    """
+    if not error_text:
+        return ErrorCategory.UNKNOWN
+
+    error_lower = error_text.lower()
+
+    # Billing/credit errors - non-recoverable
+    if any(phrase in error_lower for phrase in [
+        "credit balance",
+        "insufficient credits",
+        "billing",
+        "payment required",
+        "quota exceeded"
+    ]):
+        return ErrorCategory.BILLING
+
+    # Authentication errors - non-recoverable
+    if any(phrase in error_lower for phrase in [
+        "authentication",
+        "unauthorized",
+        "401",
+        "invalid api key",
+        "api key",
+        "forbidden",
+        "403"
+    ]):
+        return ErrorCategory.AUTH
+
+    # Rate limit errors - retry with longer delay
+    if any(phrase in error_lower for phrase in [
+        "rate limit",
+        "429",
+        "too many requests",
+        "throttl"
+    ]):
+        return ErrorCategory.RATE_LIMIT
+
+    # SDK crash / Windows exit code 1 - retry
+    if any(phrase in error_lower for phrase in [
+        "exit code 1",
+        "exit code: 1",
+        "exited with code 1"
+    ]):
+        return ErrorCategory.SDK_CRASH
+
+    # Transient network/timeout errors - retry
+    if any(phrase in error_lower for phrase in [
+        "timeout",
+        "timed out",
+        "connection",
+        "network",
+        "unreachable",
+        "temporarily unavailable",
+        "500",
+        "502",
+        "503",
+        "504",
+        "internal server error",
+        "service unavailable",
+        "gateway"
+    ]):
+        return ErrorCategory.TRANSIENT
+
+    return ErrorCategory.UNKNOWN
 
 
 class AgentSession:
@@ -121,11 +196,36 @@ class AgentSession:
         """Run an agent session with the given prompt.
 
         Routes to CLI or SDK based on config.session_mode.
+        Applies session timeout if configured.
         """
-        if self.config.session_mode == SessionMode.CLI:
-            return await self._run_cli_session(prompt, on_message)
-        else:
-            return await self._run_sdk_session(prompt, on_message)
+        timeout = self.config.session_timeout_seconds
+
+        try:
+            if self.config.session_mode == SessionMode.CLI:
+                coro = self._run_cli_session(prompt, on_message)
+            else:
+                coro = self._run_sdk_session(prompt, on_message)
+
+            # Apply timeout if configured
+            if timeout > 0:
+                print(f"[SESSION] Timeout set: {timeout}s ({timeout // 60}m)")
+                result = await asyncio.wait_for(coro, timeout=timeout)
+            else:
+                result = await coro
+
+            return result
+
+        except asyncio.TimeoutError:
+            print(f"\n[SESSION] Timeout after {timeout}s - forcing handoff")
+            return SessionResult(
+                session_id=self.session_id,
+                success=False,
+                context_usage_percent=self.context_usage_percent,
+                error_message=f"Session timeout after {timeout}s - forcing handoff",
+                error_category=ErrorCategory.TRANSIENT,  # Treat as transient for retry logic
+                handoff_requested=True,  # Trigger handoff instead of failure
+                summary=f"Session timed out after {timeout // 60} minutes"
+            )
 
     async def _run_cli_session(
         self,
@@ -228,18 +328,19 @@ class AgentSession:
                 # Check for known error patterns
                 error_text = stderr_text or stdout_text
 
-                if "credit balance" in error_text.lower():
-                    result.error_message = f"API Credit Error: {error_text.strip()}"
+                # Classify the error for retry logic
+                result.error_category = classify_error(error_text)
+                result.error_message = f"CLI exited with code {process.returncode}: {error_text.strip()}"
+
+                # Log based on error category
+                if result.error_category == ErrorCategory.BILLING:
                     print(f"\n[ERROR] API credits issue: {error_text}")
-                elif "rate limit" in error_text.lower():
-                    result.error_message = f"Rate Limited: {error_text.strip()}"
+                elif result.error_category == ErrorCategory.RATE_LIMIT:
                     print(f"\n[ERROR] Rate limited: {error_text}")
-                elif "authentication" in error_text.lower() or "unauthorized" in error_text.lower():
-                    result.error_message = f"Auth Error: {error_text.strip()}"
+                elif result.error_category == ErrorCategory.AUTH:
                     print(f"\n[ERROR] Authentication issue: {error_text}")
                 else:
-                    result.error_message = f"CLI exited with code {process.returncode}: {error_text.strip()}"
-                    print(f"\n[ERROR] CLI failed (code {process.returncode})")
+                    print(f"\n[ERROR] CLI failed (code {process.returncode}) - {result.error_category.value}")
                     if stderr_text:
                         print(f"[STDERR] {stderr_text}")
 
@@ -395,13 +496,16 @@ class AgentSession:
             # Store the raw error
             result.raw_error = error_str
 
+            # Classify the error for retry logic
+            result.error_category = classify_error(error_str)
+
             # Always log the full error for visibility
             print(f"\n[SDK ERROR] Exception during session:")
             print(f"[SDK ERROR] {error_str}")
+            print(f"[SDK ERROR] Category: {result.error_category.value}")
 
-            # Check for specific error patterns and display clearly
-            error_lower = error_str.lower()
-            if "credit balance" in error_lower:
+            # Display category-specific messages
+            if result.error_category == ErrorCategory.BILLING:
                 print(f"\n{'='*60}")
                 print("[BILLING ERROR] Credit balance is too low!")
                 print("The SDK uses Anthropic API credits, NOT your Claude subscription.")
@@ -410,13 +514,13 @@ class AgentSession:
                 print("  2. Use CLI mode instead (uses your subscription)")
                 print(f"{'='*60}\n")
                 result.error_message = "API Credit Error: Credit balance is too low. SDK uses API credits, not Claude subscription."
-            elif "rate limit" in error_lower or "429" in error_str:
-                print(f"\n[BILLING ERROR] Rate limited - too many requests")
+            elif result.error_category == ErrorCategory.RATE_LIMIT:
+                print(f"\n[RATE LIMIT] Too many requests - will retry with backoff")
                 result.error_message = f"Rate Limited: {error_str}"
-            elif "unauthorized" in error_lower or "401" in error_str or "authentication" in error_lower:
+            elif result.error_category == ErrorCategory.AUTH:
                 print(f"\n[AUTH ERROR] Authentication failed")
                 result.error_message = f"Auth Error: {error_str}"
-            elif "exit code 1" in error_lower or "exit code: 1" in error_lower:
+            elif result.error_category == ErrorCategory.SDK_CRASH:
                 # Windows SDK bug - but now we have more context
                 print(f"\n[SDK] Exit code 1 encountered")
                 print(f"[SDK] Messages received before error: {message_count}")

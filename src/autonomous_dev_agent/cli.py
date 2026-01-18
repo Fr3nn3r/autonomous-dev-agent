@@ -11,6 +11,7 @@ from rich.table import Table
 
 from .models import Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig, SessionMode
 from .harness import AutonomousHarness
+from .git_manager import GitManager
 
 console = Console()
 
@@ -306,6 +307,120 @@ def import_backlog(project_path: str, markdown_file: str):
 
     backlog_file.write_text(backlog.model_dump_json(indent=2))
     console.print(f"[green]OK[/green] Imported {imported} features from {markdown_file}")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+@click.option('--to', 'commit_hash', help='Commit hash to reset to')
+@click.option('--hard', is_flag=True, help='Hard reset (discard all changes)')
+@click.option('--list', 'list_commits', is_flag=True, help='List recent commits')
+@click.option('--revert', is_flag=True, help='Revert the last commit (creates new commit)')
+def rollback(project_path: str, commit_hash: Optional[str], hard: bool, list_commits: bool, revert: bool):
+    """Rollback to a previous commit or revert the last commit.
+
+    Examples:
+
+    \b
+    # List recent commits
+    ada rollback <path> --list
+
+    \b
+    # Revert last commit (safe - creates new commit)
+    ada rollback <path> --revert
+
+    \b
+    # Reset to specific commit (soft reset - keeps changes staged)
+    ada rollback <path> --to abc123
+
+    \b
+    # Hard reset (DANGEROUS - discards all changes)
+    ada rollback <path> --to abc123 --hard
+    """
+    path = Path(project_path)
+    git = GitManager(path)
+
+    if not git.is_git_repo():
+        console.print("[red]Not a git repository[/red]")
+        return
+
+    # List recent commits
+    if list_commits:
+        commits = git.get_recent_commits(count=10)
+        if not commits:
+            console.print("[yellow]No commits found[/yellow]")
+            return
+
+        table = Table(title="Recent Commits")
+        table.add_column("Hash", style="cyan")
+        table.add_column("Message")
+
+        for hash_, message in commits:
+            table.add_row(hash_[:8], message[:60] + "..." if len(message) > 60 else message)
+
+        console.print(table)
+        console.print("\n[dim]Use 'ada rollback <path> --to <hash>' to reset[/dim]")
+        return
+
+    # Revert last commit
+    if revert:
+        console.print("[yellow]Reverting last commit...[/yellow]")
+        new_hash = git.revert_last_commit()
+
+        if new_hash:
+            console.print(f"[green]OK[/green] Created revert commit: {new_hash[:8]}")
+        else:
+            console.print("[red]Failed to revert. There may be conflicts or no commits to revert.[/red]")
+        return
+
+    # Reset to specific commit
+    if commit_hash:
+        # Verify commit exists
+        commit_info = git.get_commit_info(commit_hash)
+        if not commit_info:
+            console.print(f"[red]Commit not found: {commit_hash}[/red]")
+            return
+
+        full_hash, message, date = commit_info
+
+        console.print(f"\n[bold]Target commit:[/bold]")
+        console.print(f"  Hash: {full_hash[:8]}")
+        console.print(f"  Message: {message}")
+        console.print(f"  Date: {date}")
+
+        # Show commits that will be affected
+        commits_to_undo = git.get_commits_since(commit_hash)
+        if commits_to_undo:
+            console.print(f"\n[yellow]{len(commits_to_undo)} commit(s) will be undone:[/yellow]")
+            for hash_, msg in commits_to_undo[:5]:
+                console.print(f"  - {hash_[:8]}: {msg[:50]}")
+            if len(commits_to_undo) > 5:
+                console.print(f"  ... and {len(commits_to_undo) - 5} more")
+
+        mode_text = "[red]HARD (changes will be LOST)[/red]" if hard else "soft (changes will be staged)"
+        console.print(f"\n[bold]Reset mode:[/bold] {mode_text}")
+
+        # Confirm for hard reset
+        if hard:
+            if not click.confirm("\nThis will permanently delete uncommitted changes. Continue?"):
+                console.print("[yellow]Cancelled[/yellow]")
+                return
+
+        if git.reset_to_commit(commit_hash, hard=hard):
+            console.print(f"\n[green]OK[/green] Reset to {full_hash[:8]}")
+            if not hard:
+                console.print("[dim]Changes from undone commits are now staged[/dim]")
+        else:
+            console.print("[red]Reset failed[/red]")
+        return
+
+    # No options specified - show help
+    console.print("Usage: ada rollback <path> [OPTIONS]")
+    console.print("\nOptions:")
+    console.print("  --list    List recent commits")
+    console.print("  --revert  Revert the last commit (safe)")
+    console.print("  --to      Reset to a specific commit")
+    console.print("  --hard    Hard reset (use with --to)")
+    console.print("\nRun 'ada rollback --help' for more info")
 
 
 if __name__ == '__main__':
