@@ -6,7 +6,7 @@ Uses Pydantic for validation. JSON format prevents accidental corruption by LLMs
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -118,6 +118,12 @@ class Feature(BaseModel):
     quality_gates: Optional[QualityGates] = Field(
         default=None,
         description="Quality gates that must pass before completion"
+    )
+
+    # Model selection - allows per-feature model override
+    model_override: Optional[str] = Field(
+        default=None,
+        description="Override model for this feature (e.g., 'claude-opus-4-5-20251101' for complex tasks)"
     )
 
 
@@ -329,3 +335,260 @@ class HarnessConfig(BaseModel):
         default=100,
         description="Number of recent entries to keep after rotation"
     )
+
+
+class UsageStats(BaseModel):
+    """Token usage and cost statistics for a session or operation."""
+    input_tokens: int = Field(default=0, description="Total input tokens consumed")
+    output_tokens: int = Field(default=0, description="Total output tokens generated")
+    cache_read_tokens: int = Field(default=0, description="Tokens read from cache")
+    cache_write_tokens: int = Field(default=0, description="Tokens written to cache")
+    model: str = Field(default="", description="Model used for this operation")
+    cost_usd: float = Field(default=0.0, description="Estimated cost in USD")
+
+    def __add__(self, other: "UsageStats") -> "UsageStats":
+        """Add two UsageStats together."""
+        return UsageStats(
+            input_tokens=self.input_tokens + other.input_tokens,
+            output_tokens=self.output_tokens + other.output_tokens,
+            cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
+            cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
+            model=self.model or other.model,
+            cost_usd=self.cost_usd + other.cost_usd
+        )
+
+
+class SessionOutcome(str, Enum):
+    """Outcome of a completed session."""
+    SUCCESS = "success"      # Feature completed successfully
+    FAILURE = "failure"      # Session failed with error
+    HANDOFF = "handoff"      # Session ended at context threshold
+    TIMEOUT = "timeout"      # Session timed out
+
+
+class SessionRecord(BaseModel):
+    """Record of a completed session for history tracking.
+
+    Stored in .ada_session_history.json for cost tracking and analytics.
+    """
+    session_id: str = Field(..., description="Unique session identifier")
+    feature_id: Optional[str] = Field(default=None, description="Feature being worked on")
+    started_at: datetime = Field(default_factory=datetime.now, description="Session start time")
+    ended_at: Optional[datetime] = Field(default=None, description="Session end time")
+    outcome: SessionOutcome = Field(default=SessionOutcome.SUCCESS, description="How the session ended")
+
+    # Token usage
+    input_tokens: int = Field(default=0, description="Total input tokens")
+    output_tokens: int = Field(default=0, description="Total output tokens")
+    cache_read_tokens: int = Field(default=0, description="Cache read tokens")
+    cache_write_tokens: int = Field(default=0, description="Cache write tokens")
+
+    # Cost tracking
+    model: str = Field(default="", description="Model used")
+    cost_usd: float = Field(default=0.0, description="Session cost in USD")
+
+    # Work done
+    files_changed: list[str] = Field(default_factory=list, description="Files modified")
+    commit_hash: Optional[str] = Field(default=None, description="Commit hash if committed")
+
+    # Error info
+    error_message: Optional[str] = Field(default=None, description="Error message if failed")
+    error_category: Optional[str] = Field(default=None, description="Error category")
+
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """Calculate session duration in seconds."""
+        if self.started_at and self.ended_at:
+            return (self.ended_at - self.started_at).total_seconds()
+        return None
+
+    def to_usage_stats(self) -> UsageStats:
+        """Convert to UsageStats for aggregation."""
+        return UsageStats(
+            input_tokens=self.input_tokens,
+            output_tokens=self.output_tokens,
+            cache_read_tokens=self.cache_read_tokens,
+            cache_write_tokens=self.cache_write_tokens,
+            model=self.model,
+            cost_usd=self.cost_usd
+        )
+
+
+# =============================================================================
+# Discovery Models (Phase 1.5)
+# =============================================================================
+
+
+class Severity(str, Enum):
+    """Severity level for discovered issues."""
+    CRITICAL = "critical"
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+
+
+class IssueCategory(str, Enum):
+    """Category of discovered code issues."""
+    BUG = "bug"
+    SECURITY = "security"
+    PERFORMANCE = "performance"
+    CODE_SMELL = "code_smell"
+    ERROR_HANDLING = "error_handling"
+    VALIDATION = "validation"
+    HARDCODED = "hardcoded"
+    DEPRECATED = "deprecated"
+
+
+class CodeIssue(BaseModel):
+    """A single code issue discovered during analysis."""
+    id: str = Field(..., description="Unique identifier for the issue")
+    file: str = Field(..., description="File path where issue was found")
+    line: Optional[int] = Field(default=None, description="Line number if applicable")
+    severity: Severity = Field(default=Severity.MEDIUM)
+    category: IssueCategory = Field(default=IssueCategory.CODE_SMELL)
+    title: str = Field(..., description="Short title of the issue")
+    description: str = Field(..., description="Detailed description of the issue")
+    suggested_fix: Optional[str] = Field(
+        default=None,
+        description="Suggested fix or improvement"
+    )
+
+
+class TestGap(BaseModel):
+    """A gap in test coverage."""
+    id: str = Field(..., description="Unique identifier for the gap")
+    module: str = Field(..., description="Module or file path missing tests")
+    gap_type: Literal["no_tests", "partial_coverage", "missing_edge_cases"] = Field(
+        default="no_tests",
+        description="Type of test coverage gap"
+    )
+    severity: Severity = Field(default=Severity.MEDIUM)
+    is_critical_path: bool = Field(
+        default=False,
+        description="Whether this is part of a critical code path"
+    )
+    description: Optional[str] = Field(
+        default=None,
+        description="Details about what tests are missing"
+    )
+
+
+class BestPracticeViolation(BaseModel):
+    """A violation of coding best practices."""
+    id: str = Field(..., description="Unique identifier for the violation")
+    category: str = Field(..., description="Category of best practice (e.g., 'linting', 'typing')")
+    severity: Severity = Field(default=Severity.LOW)
+    title: str = Field(..., description="Short title of the violation")
+    description: str = Field(..., description="What is missing or wrong")
+    recommendation: str = Field(..., description="Recommended action to fix")
+
+
+class ProjectSummary(BaseModel):
+    """Summary of a project's structure and characteristics."""
+    languages: list[str] = Field(
+        default_factory=list,
+        description="Programming languages detected"
+    )
+    frameworks: list[str] = Field(
+        default_factory=list,
+        description="Frameworks detected"
+    )
+    structure: dict[str, str] = Field(
+        default_factory=dict,
+        description="Directory structure mapping (path -> purpose)"
+    )
+    entry_points: list[str] = Field(
+        default_factory=list,
+        description="Main entry points of the application"
+    )
+    dependencies: dict[str, str] = Field(
+        default_factory=dict,
+        description="Dependencies and their versions"
+    )
+    line_counts: dict[str, int] = Field(
+        default_factory=dict,
+        description="Line counts by category (code, tests, docs)"
+    )
+
+
+class DiscoveryResult(BaseModel):
+    """Complete results of a discovery analysis."""
+    project_path: str = Field(..., description="Path to the analyzed project")
+    summary: ProjectSummary = Field(
+        default_factory=ProjectSummary,
+        description="Project summary"
+    )
+    code_issues: list[CodeIssue] = Field(
+        default_factory=list,
+        description="Code issues found"
+    )
+    test_gaps: list[TestGap] = Field(
+        default_factory=list,
+        description="Test coverage gaps found"
+    )
+    best_practice_violations: list[BestPracticeViolation] = Field(
+        default_factory=list,
+        description="Best practice violations found"
+    )
+    discovered_at: datetime = Field(
+        default_factory=datetime.now,
+        description="When the discovery was performed"
+    )
+
+    def total_issues(self) -> int:
+        """Get total number of issues across all categories."""
+        return (
+            len(self.code_issues) +
+            len(self.test_gaps) +
+            len(self.best_practice_violations)
+        )
+
+    def issues_by_severity(self) -> dict[Severity, int]:
+        """Count issues by severity."""
+        counts: dict[Severity, int] = {s: 0 for s in Severity}
+        for issue in self.code_issues:
+            counts[issue.severity] += 1
+        for gap in self.test_gaps:
+            counts[gap.severity] += 1
+        for violation in self.best_practice_violations:
+            counts[violation.severity] += 1
+        return counts
+
+
+class DiscoveryState(BaseModel):
+    """State for incremental discovery tracking."""
+    project_path: str = Field(..., description="Path to the tracked project")
+    known_issue_ids: list[str] = Field(
+        default_factory=list,
+        description="IDs of issues that have been seen"
+    )
+    resolved_issue_ids: list[str] = Field(
+        default_factory=list,
+        description="IDs of issues that have been resolved"
+    )
+    last_commit_hash: Optional[str] = Field(
+        default=None,
+        description="Commit hash when last discovery was run"
+    )
+    last_run_at: Optional[datetime] = Field(
+        default=None,
+        description="When the last discovery was run"
+    )
+
+    def is_known(self, issue_id: str) -> bool:
+        """Check if an issue ID is already known."""
+        return issue_id in self.known_issue_ids
+
+    def is_resolved(self, issue_id: str) -> bool:
+        """Check if an issue ID has been resolved."""
+        return issue_id in self.resolved_issue_ids
+
+    def mark_known(self, issue_id: str) -> None:
+        """Mark an issue as known."""
+        if issue_id not in self.known_issue_ids:
+            self.known_issue_ids.append(issue_id)
+
+    def mark_resolved(self, issue_id: str) -> None:
+        """Mark an issue as resolved."""
+        if issue_id not in self.resolved_issue_ids:
+            self.resolved_issue_ids.append(issue_id)

@@ -24,12 +24,16 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 
 from .models import (
     Backlog, Feature, FeatureStatus, HarnessConfig,
-    SessionState, ProgressEntry, ErrorCategory, RetryConfig
+    SessionState, ProgressEntry, ErrorCategory, RetryConfig,
+    SessionOutcome, SessionRecord
 )
 from .progress import ProgressTracker
 from .git_manager import GitManager
 from .session import SessionManager, AgentSession, SessionResult
 from .validators import QualityGateValidator
+from .cost_tracker import CostTracker
+from .session_history import SessionHistory, create_session_record
+from .model_selector import ModelSelector
 
 
 console = Console()
@@ -62,12 +66,16 @@ class AutonomousHarness:
         )
         self.git = GitManager(self.project_path)
         self.sessions = SessionManager(self.config, self.project_path)
+        self.session_history = SessionHistory(self.project_path)
+        self.cost_tracker = CostTracker(self.config.model)
+        self.model_selector = ModelSelector(default_model=self.config.model)
 
         # State
         self.initialized = False
         self.total_sessions = 0
         self._shutdown_requested = False
         self._current_feature: Optional[Feature] = None
+        self._total_cost_usd = 0.0
 
     def _setup_signal_handlers(self) -> None:
         """Set up signal handlers for graceful shutdown."""
@@ -444,11 +452,21 @@ class AutonomousHarness:
 
     async def run_coding_session(self, feature: Feature) -> SessionResult:
         """Run a coding session for a specific feature."""
+        # Select appropriate model for this feature
+        selected_model = self.model_selector.select_model(feature)
+        model_explanation = self.model_selector.explain_selection(feature)
+
         console.print(Panel(
             f"[bold green]Feature:[/bold green] {feature.name}\n"
-            f"[dim]{feature.description}[/dim]",
+            f"[dim]{feature.description}[/dim]\n"
+            f"[bold blue]Model:[/bold blue] {model_explanation['model_name']} "
+            f"(score: {model_explanation['complexity_score']})",
             title="Coding Session"
         ))
+
+        # Update config to use selected model for this session
+        original_model = self.config.model
+        self.config.model = selected_model
 
         # Mark feature as in progress
         self.backlog.mark_feature_started(feature.id)
@@ -487,6 +505,21 @@ class AutonomousHarness:
             if not completed:
                 # Tests failed - feature remains in_progress
                 result.feature_completed = False
+                # Record as failure
+                self._record_session(
+                    session, feature, result,
+                    outcome=SessionOutcome.FAILURE,
+                )
+        else:
+            # Session failed - record to history
+            outcome = SessionOutcome.TIMEOUT if "timeout" in (result.error_message or "").lower() else SessionOutcome.FAILURE
+            self._record_session(
+                session, feature, result,
+                outcome=outcome,
+            )
+
+        # Restore original model setting
+        self.config.model = original_model
 
         return result
 
@@ -538,6 +571,14 @@ class AutonomousHarness:
         )
 
         console.print(f"[green]OK[/green] Handoff complete. Commit: {commit_hash or 'no changes'}")
+
+        # Record session to history
+        self._record_session(
+            session, feature, result,
+            outcome=SessionOutcome.HANDOFF,
+            commit_hash=commit_hash,
+            files_changed=git_status.modified_files + git_status.staged_files
+        )
 
     async def _complete_feature(
         self,
@@ -631,6 +672,13 @@ class AutonomousHarness:
 
         # Clear session state - no longer need recovery
         session.clear_state()
+
+        # Record session to history
+        self._record_session(
+            session, feature, result,
+            outcome=SessionOutcome.SUCCESS,
+            commit_hash=commit_hash
+        )
 
         console.print(f"[green]OK[/green] Feature completed: {feature.name}")
         return True
@@ -741,6 +789,57 @@ class AutonomousHarness:
         )
         session.save_state(state)
 
+    def _record_session(
+        self,
+        session: AgentSession,
+        feature: Optional[Feature],
+        result: SessionResult,
+        outcome: SessionOutcome,
+        commit_hash: Optional[str] = None,
+        files_changed: Optional[list[str]] = None
+    ) -> None:
+        """Record a completed session to history.
+
+        Args:
+            session: The completed session
+            feature: Feature being worked on (if any)
+            result: Session result
+            outcome: How the session ended
+            commit_hash: Commit hash if committed
+            files_changed: Files modified during the session
+        """
+        # Create session record
+        record = create_session_record(
+            session_id=session.session_id,
+            feature_id=feature.id if feature else None,
+            model=result.model or self.config.model,
+            outcome=outcome,
+            input_tokens=result.usage_stats.input_tokens,
+            output_tokens=result.usage_stats.output_tokens,
+            cache_read_tokens=result.usage_stats.cache_read_tokens,
+            cache_write_tokens=result.usage_stats.cache_write_tokens,
+            cost_usd=result.usage_stats.cost_usd,
+            files_changed=files_changed or result.files_changed,
+            commit_hash=commit_hash,
+            error_message=result.error_message,
+            error_category=result.error_category.value if result.error_category else None,
+            started_at=result.started_at,
+            ended_at=result.ended_at
+        )
+
+        # Add to history
+        self.session_history.add_record(record)
+
+        # Track cumulative cost
+        self._total_cost_usd += result.usage_stats.cost_usd
+
+        # Display cost info
+        if result.usage_stats.cost_usd > 0:
+            console.print(
+                f"[dim]Session cost: ${result.usage_stats.cost_usd:.4f} "
+                f"(Total: ${self._total_cost_usd:.4f})[/dim]"
+            )
+
     async def run(self) -> None:
         """Main entry point - run until backlog is complete."""
         # Set up signal handlers for graceful shutdown
@@ -830,9 +929,13 @@ class AutonomousHarness:
 
         # Summary
         completed = sum(1 for f in self.backlog.features if f.status == FeatureStatus.COMPLETED)
+        cost_summary = self.session_history.get_cost_summary()
         console.print(Panel(
             f"[bold]Sessions run:[/bold] {self.total_sessions}\n"
-            f"[bold]Features completed:[/bold] {completed}/{len(self.backlog.features)}",
+            f"[bold]Features completed:[/bold] {completed}/{len(self.backlog.features)}\n"
+            f"[bold]Total cost:[/bold] ${cost_summary.total_cost_usd:.4f}\n"
+            f"[bold]Total tokens:[/bold] {CostTracker.format_tokens(cost_summary.total_input_tokens)} in / "
+            f"{CostTracker.format_tokens(cost_summary.total_output_tokens)} out",
             title="Summary"
         ))
 

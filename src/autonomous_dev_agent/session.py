@@ -19,7 +19,8 @@ from typing import Optional, Callable, Any
 
 from pydantic import BaseModel
 
-from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory
+from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory, UsageStats
+from .cost_tracker import CostTracker
 
 
 class SessionResult(BaseModel):
@@ -33,7 +34,12 @@ class SessionResult(BaseModel):
     handoff_requested: bool = False
     summary: Optional[str] = None
     files_changed: list[str] = []
-    # New: capture raw output for debugging
+    # Token usage and cost tracking
+    usage_stats: UsageStats = UsageStats()
+    started_at: Optional[datetime] = None
+    ended_at: Optional[datetime] = None
+    model: str = ""
+    # Capture raw output for debugging
     raw_output: Optional[str] = None
     raw_error: Optional[str] = None
 
@@ -129,6 +135,8 @@ class AgentSession:
         self.session_id = session_id or f"session_{uuid.uuid4().hex[:8]}"
         self.context_usage_percent = 0.0
         self._state_file = self.project_path / ".ada_session_state.json"
+        self._cost_tracker = CostTracker(config.model)
+        self._started_at: Optional[datetime] = None
 
     def save_state(self, state: SessionState) -> None:
         """Persist session state for recovery."""
@@ -199,6 +207,7 @@ class AgentSession:
         Applies session timeout if configured.
         """
         timeout = self.config.session_timeout_seconds
+        self._started_at = datetime.now()
 
         try:
             if self.config.session_mode == SessionMode.CLI:
@@ -213,6 +222,11 @@ class AgentSession:
             else:
                 result = await coro
 
+            # Add timing and model info
+            result.started_at = self._started_at
+            result.ended_at = datetime.now()
+            result.model = self.config.model
+
             return result
 
         except asyncio.TimeoutError:
@@ -224,7 +238,10 @@ class AgentSession:
                 error_message=f"Session timeout after {timeout}s - forcing handoff",
                 error_category=ErrorCategory.TRANSIENT,  # Treat as transient for retry logic
                 handoff_requested=True,  # Trigger handoff instead of failure
-                summary=f"Session timed out after {timeout // 60} minutes"
+                summary=f"Session timed out after {timeout // 60} minutes",
+                started_at=self._started_at,
+                ended_at=datetime.now(),
+                model=self.config.model
             )
 
     async def _run_cli_session(
@@ -350,6 +367,21 @@ class AgentSession:
                 result.summary = "Session completed successfully via CLI"
                 print(f"\n[CLI] Session completed successfully")
 
+                # Try to parse usage stats from CLI output
+                parsed_stats = CostTracker.parse_cli_output(stdout_text)
+                if parsed_stats:
+                    # Calculate cost if tokens were found
+                    if parsed_stats.input_tokens or parsed_stats.output_tokens:
+                        parsed_stats.cost_usd = self._cost_tracker.calculate_cost(
+                            input_tokens=parsed_stats.input_tokens,
+                            output_tokens=parsed_stats.output_tokens,
+                            cache_read_tokens=parsed_stats.cache_read_tokens,
+                            cache_write_tokens=parsed_stats.cache_write_tokens
+                        )
+                        parsed_stats.model = self.config.model
+                    result.usage_stats = parsed_stats
+                    print(f"[CLI] Usage: {parsed_stats.input_tokens} in / {parsed_stats.output_tokens} out (${parsed_stats.cost_usd:.4f})")
+
         except FileNotFoundError:
             result.error_message = "Claude CLI not found. Make sure 'claude' is installed and in PATH."
             print(f"\n[ERROR] {result.error_message}")
@@ -387,6 +419,8 @@ class AgentSession:
         message_count = 0
         received_result_message = False
         all_messages = []  # Capture all messages for debugging
+        total_input_tokens = 0
+        total_output_tokens = 0
 
         print(f"\n[SDK] Starting session with model: {self.config.model}")
         print(f"[SDK] NOTE: SDK uses API credits, not your Claude subscription")
@@ -444,7 +478,9 @@ class AgentSession:
                     usage = message.usage
                     input_tokens = usage.get('input_tokens', 0)
                     output_tokens = usage.get('output_tokens', 0)
-                    total_tokens = input_tokens + output_tokens
+                    total_input_tokens += input_tokens
+                    total_output_tokens += output_tokens
+                    total_tokens = total_input_tokens + total_output_tokens
                     self.context_usage_percent = (total_tokens / 200000) * 100
                     result.context_usage_percent = self.context_usage_percent
                     print(f"  Tokens: {input_tokens} in / {output_tokens} out ({self.context_usage_percent:.1f}% context)")
@@ -481,6 +517,20 @@ class AgentSession:
 
             # Store message log for debugging
             result.raw_output = "\n".join(all_messages)
+
+            # Calculate and store usage stats
+            if total_input_tokens or total_output_tokens:
+                cost = self._cost_tracker.calculate_cost(
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens
+                )
+                result.usage_stats = UsageStats(
+                    input_tokens=total_input_tokens,
+                    output_tokens=total_output_tokens,
+                    model=self.config.model,
+                    cost_usd=cost
+                )
+                print(f"[SDK] Total usage: {total_input_tokens} in / {total_output_tokens} out (${cost:.4f})")
 
             print(f"\n{'='*60}")
             print(f"[SDK] Session completed - processed {message_count} messages")

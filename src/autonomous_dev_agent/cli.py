@@ -9,9 +9,18 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from .models import Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig, SessionMode
+from .models import (
+    Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig, SessionMode,
+    Severity, DiscoveryResult,
+)
 from .harness import AutonomousHarness
 from .git_manager import GitManager
+from .discovery import (
+    CodebaseAnalyzer, BestPracticesChecker, TestGapAnalyzer,
+    DiscoveryTracker, BacklogGenerator,
+)
+from .discovery.reviewer import CodeReviewer
+from .discovery.requirements import RequirementsExtractor
 
 console = Console()
 
@@ -421,6 +430,316 @@ def rollback(project_path: str, commit_hash: Optional[str], hard: bool, list_com
     console.print("  --to      Reset to a specific commit")
     console.print("  --hard    Hard reset (use with --to)")
     console.print("\nRun 'ada rollback --help' for more info")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+@click.option('--review', is_flag=True, help='Include Claude AI code review (uses API)')
+@click.option('--fix', is_flag=True, help='Generate backlog and optionally start fixing')
+@click.option('--dry-run', is_flag=True, help='Preview without saving changes')
+@click.option('--incremental', is_flag=True, help='Only show new issues since last run')
+@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model for AI review')
+@click.option('--output', default='feature-list.json', help='Output backlog filename')
+def discover(
+    project_path: str,
+    review: bool,
+    fix: bool,
+    dry_run: bool,
+    incremental: bool,
+    model: str,
+    output: str,
+):
+    """Analyze an existing project and discover work to be done.
+
+    Performs static analysis to identify:
+    - Missing tests
+    - Best practice violations
+    - Code structure issues
+
+    \b
+    Examples:
+      ada discover .                    # Basic static analysis (free)
+      ada discover . --review           # Include AI code review
+      ada discover . --fix              # Generate backlog from findings
+      ada discover . --dry-run          # Preview without saving
+      ada discover . --incremental      # Only new issues since last run
+    """
+    path = Path(project_path).resolve()
+
+    console.print(f"\n[bold]Discovering issues in:[/bold] {path}")
+    console.print("")
+
+    # Initialize tracker for incremental mode
+    tracker = DiscoveryTracker(path)
+
+    # Phase 1: Static codebase analysis
+    with console.status("[bold blue]Analyzing codebase structure..."):
+        analyzer = CodebaseAnalyzer(path)
+        summary = analyzer.analyze()
+
+    console.print("[green]OK[/green] Codebase analysis complete")
+    console.print(f"  Languages: {', '.join(summary.languages) or 'None detected'}")
+    console.print(f"  Frameworks: {', '.join(summary.frameworks) or 'None detected'}")
+    console.print(f"  Lines of code: {summary.line_counts.get('code', 0):,}")
+    console.print(f"  Lines of tests: {summary.line_counts.get('tests', 0):,}")
+    console.print("")
+
+    # Phase 2: Best practices check
+    with console.status("[bold blue]Checking best practices..."):
+        bp_checker = BestPracticesChecker(path, languages=summary.languages)
+        violations = bp_checker.check_all()
+
+    console.print(f"[green]OK[/green] Best practices check: {len(violations)} issue(s)")
+
+    # Phase 3: Test gap analysis
+    with console.status("[bold blue]Analyzing test coverage gaps..."):
+        test_analyzer = TestGapAnalyzer(path, languages=summary.languages)
+        test_gaps = test_analyzer.analyze()
+
+    console.print(f"[green]OK[/green] Test gap analysis: {len(test_gaps)} gap(s)")
+
+    # Phase 4: Code review (optional, uses AI)
+    code_issues = []
+    if review:
+        console.print("")
+        with console.status("[bold blue]Running AI code review (this may take a minute)..."):
+            reviewer = CodeReviewer(path, model=model)
+            code_issues = reviewer.review_sync()
+
+        console.print(f"[green]OK[/green] AI code review: {len(code_issues)} issue(s)")
+
+    # Build discovery result
+    result = DiscoveryResult(
+        project_path=str(path),
+        summary=summary,
+        code_issues=code_issues,
+        test_gaps=test_gaps,
+        best_practice_violations=violations,
+    )
+
+    # Apply incremental filtering if requested
+    if incremental:
+        original_count = result.total_issues()
+        result = tracker.filter_new_issues(result)
+        filtered_count = result.total_issues()
+        console.print(f"\n[dim]Incremental mode: showing {filtered_count} new issues (filtered {original_count - filtered_count} known)[/dim]")
+
+    # Display results
+    console.print("\n" + "=" * 60)
+    console.print("[bold]Discovery Results[/bold]")
+    console.print("=" * 60)
+
+    # Summary by severity
+    severity_counts = result.issues_by_severity()
+    console.print(f"\n[red]Critical:[/red] {severity_counts[Severity.CRITICAL]}  "
+                  f"[yellow]High:[/yellow] {severity_counts[Severity.HIGH]}  "
+                  f"[blue]Medium:[/blue] {severity_counts[Severity.MEDIUM]}  "
+                  f"[dim]Low:[/dim] {severity_counts[Severity.LOW]}")
+
+    # Show issues by category
+    if code_issues:
+        console.print("\n[bold]Code Issues:[/bold]")
+        _display_code_issues(code_issues[:10])  # Show top 10
+        if len(code_issues) > 10:
+            console.print(f"  [dim]... and {len(code_issues) - 10} more[/dim]")
+
+    if test_gaps:
+        console.print("\n[bold]Test Gaps:[/bold]")
+        _display_test_gaps(test_gaps[:10])
+        if len(test_gaps) > 10:
+            console.print(f"  [dim]... and {len(test_gaps) - 10} more[/dim]")
+
+    if violations:
+        console.print("\n[bold]Best Practice Issues:[/bold]")
+        _display_violations(violations[:10])
+        if len(violations) > 10:
+            console.print(f"  [dim]... and {len(violations) - 10} more[/dim]")
+
+    # Generate backlog if requested
+    if fix and not dry_run:
+        console.print("\n" + "-" * 60)
+        console.print("[bold]Generating backlog...[/bold]")
+
+        # Check for existing backlog
+        backlog_path = path / output
+        existing_backlog = None
+        if backlog_path.exists():
+            try:
+                existing_backlog = Backlog.model_validate_json(backlog_path.read_text())
+                console.print(f"  Found existing backlog with {len(existing_backlog.features)} features")
+            except Exception:
+                pass
+
+        generator = BacklogGenerator(path)
+        backlog = generator.generate(result, existing_backlog=existing_backlog)
+
+        # Save backlog
+        output_path = generator.save_backlog(backlog, filename=output)
+        console.print(f"[green]OK[/green] Saved {len(backlog.features)} features to {output_path}")
+
+        # Update tracker state
+        tracker.update_from_result(result)
+        tracker.save_state()
+        console.print("[green]OK[/green] Updated discovery state")
+
+    elif fix and dry_run:
+        console.print("\n[yellow]Dry run:[/yellow] Would generate backlog with findings")
+
+    # Save tracker state even without --fix (for incremental mode)
+    if not dry_run and not fix:
+        tracker.mark_issues_known(result)
+        tracker.save_state()
+
+    # Final summary
+    console.print("\n" + "=" * 60)
+    total = result.total_issues()
+    if total == 0:
+        console.print("[green]No issues found! The codebase looks good.[/green]")
+    else:
+        console.print(f"[bold]Total: {total} issue(s) discovered[/bold]")
+        if not fix:
+            console.print("\n[dim]Run with --fix to generate a backlog from these findings[/dim]")
+
+
+def _display_code_issues(issues: list) -> None:
+    """Display code issues in a formatted way."""
+    severity_colors = {
+        Severity.CRITICAL: "red",
+        Severity.HIGH: "yellow",
+        Severity.MEDIUM: "blue",
+        Severity.LOW: "dim",
+    }
+
+    for issue in issues:
+        color = severity_colors.get(issue.severity, "white")
+        location = f"{issue.file}"
+        if issue.line:
+            location += f":{issue.line}"
+        console.print(f"  [{color}]{issue.severity.value.upper()}[/{color}] {issue.title}")
+        console.print(f"    [dim]{location}[/dim]")
+
+
+def _display_test_gaps(gaps: list) -> None:
+    """Display test gaps in a formatted way."""
+    for gap in gaps:
+        critical_marker = " [red](critical path)[/red]" if gap.is_critical_path else ""
+        console.print(f"  {gap.module}{critical_marker}")
+        console.print(f"    [dim]{gap.gap_type.replace('_', ' ')}[/dim]")
+
+
+def _display_violations(violations: list) -> None:
+    """Display best practice violations."""
+    for v in violations:
+        console.print(f"  [{v.severity.value}] {v.title}")
+        console.print(f"    [dim]{v.recommendation}[/dim]")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+@click.option('--host', default='127.0.0.1', help='Host to bind to')
+@click.option('--port', default=8000, help='Port to listen on')
+@click.option('--reload', is_flag=True, help='Enable auto-reload for development')
+def dashboard(project_path: str, host: str, port: int, reload: bool):
+    """Start the dashboard server for real-time monitoring.
+
+    Starts a FastAPI server that provides:
+    - REST API at http://host:port/api/
+    - WebSocket at ws://host:port/ws/events
+    - API docs at http://host:port/docs
+
+    The dashboard reads project state files and provides real-time
+    updates via WebSocket when files change.
+
+    Example:
+        ada dashboard ./my-project --port 8000
+    """
+    from .api import run_dashboard
+
+    path = Path(project_path)
+    console.print(f"[bold]Starting ADA Dashboard[/bold]")
+    console.print(f"Project: {path}")
+    console.print(f"API: http://{host}:{port}/api/")
+    console.print(f"Docs: http://{host}:{port}/docs")
+    console.print(f"WebSocket: ws://{host}:{port}/ws/events")
+    console.print(f"\nPress Ctrl+C to stop\n")
+
+    try:
+        run_dashboard(path, host=host, port=port, reload=reload)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Dashboard stopped[/yellow]")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+def costs(project_path: str):
+    """Show cost summary for the project.
+
+    Displays total costs, token usage, and breakdowns by model and outcome.
+    """
+    from .session_history import SessionHistory
+    from .cost_tracker import CostTracker
+
+    path = Path(project_path)
+    history = SessionHistory(path)
+
+    summary = history.get_cost_summary()
+
+    if summary.total_sessions == 0:
+        console.print("[yellow]No sessions recorded yet.[/yellow]")
+        return
+
+    # Header
+    console.print(f"\n[bold]Cost Summary for {path.name}[/bold]\n")
+
+    # Totals table
+    from rich.table import Table
+
+    totals_table = Table(title="Totals", show_header=False)
+    totals_table.add_column("Metric", style="cyan")
+    totals_table.add_column("Value", style="green")
+
+    totals_table.add_row("Total Cost", f"${summary.total_cost_usd:.4f}")
+    totals_table.add_row("Total Sessions", str(summary.total_sessions))
+    totals_table.add_row("Input Tokens", CostTracker.format_tokens(summary.total_input_tokens))
+    totals_table.add_row("Output Tokens", CostTracker.format_tokens(summary.total_output_tokens))
+    if summary.total_cache_read_tokens:
+        totals_table.add_row("Cache Read", CostTracker.format_tokens(summary.total_cache_read_tokens))
+
+    console.print(totals_table)
+
+    # Cost by model
+    if summary.cost_by_model:
+        console.print("\n[bold]By Model[/bold]")
+        model_table = Table()
+        model_table.add_column("Model", style="cyan")
+        model_table.add_column("Sessions", justify="right")
+        model_table.add_column("Cost", justify="right", style="green")
+
+        for model, cost in sorted(summary.cost_by_model.items(), key=lambda x: -x[1]):
+            sessions = summary.sessions_by_model.get(model, 0)
+            model_table.add_row(model, str(sessions), f"${cost:.4f}")
+
+        console.print(model_table)
+
+    # Sessions by outcome
+    if summary.sessions_by_outcome:
+        console.print("\n[bold]By Outcome[/bold]")
+        outcome_table = Table()
+        outcome_table.add_column("Outcome", style="cyan")
+        outcome_table.add_column("Sessions", justify="right")
+
+        outcome_colors = {
+            "success": "green",
+            "failure": "red",
+            "handoff": "yellow",
+            "timeout": "red",
+        }
+
+        for outcome, count in sorted(summary.sessions_by_outcome.items()):
+            color = outcome_colors.get(outcome, "white")
+            outcome_table.add_row(f"[{color}]{outcome}[/{color}]", str(count))
+
+        console.print(outcome_table)
 
 
 if __name__ == '__main__':
