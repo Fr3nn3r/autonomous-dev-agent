@@ -269,9 +269,9 @@ class HarnessConfig(BaseModel):
         description="How to invoke Claude: 'cli' (direct CLI, uses subscription, more reliable) or 'sdk' (Agent SDK, uses API credits, Windows issues)"
     )
 
-    # Model settings - different defaults for CLI vs SDK
+    # Model settings - default to Sonnet for cost efficiency
     model: str = Field(
-        default="claude-opus-4-5-20251101",
+        default="claude-sonnet-4-20250514",
         description="Model to use. CLI mode supports any model, SDK may have restrictions."
     )
 

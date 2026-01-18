@@ -37,7 +37,7 @@ def main():
 @click.argument('project_path', type=click.Path(exists=True))
 @click.option('--mode', type=click.Choice(['cli', 'sdk']), default='cli',
               help='Session mode: cli (uses subscription, reliable) or sdk (uses API credits, Windows issues)')
-@click.option('--model', default='claude-opus-4-5-20251101', help='Claude model to use')
+@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model to use')
 @click.option('--threshold', default=70.0, help='Context threshold percentage for handoff')
 @click.option('--max-sessions', type=int, help='Maximum sessions before stopping')
 @click.option('--max-turns', default=100, help='Maximum turns per session (CLI mode only)')
