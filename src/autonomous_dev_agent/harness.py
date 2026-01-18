@@ -25,12 +25,13 @@ from rich.progress import Progress, SpinnerColumn, TextColumn
 from .models import (
     Backlog, Feature, FeatureStatus, HarnessConfig,
     SessionState, ProgressEntry, ErrorCategory, RetryConfig,
-    SessionOutcome, SessionRecord
+    SessionOutcome, SessionRecord, VerificationConfig
 )
 from .progress import ProgressTracker
 from .git_manager import GitManager
 from .session import SessionManager, AgentSession, SessionResult
 from .validators import QualityGateValidator
+from .verification import FeatureVerifier
 from .cost_tracker import CostTracker
 from .session_history import SessionHistory, create_session_record
 from .model_selector import ModelSelector
@@ -589,11 +590,19 @@ class AutonomousHarness:
         """Validate and mark a feature as completed.
 
         Runs quality gate validations and tests before marking complete.
+        Uses Phase 3 verification system if configured, otherwise falls back
+        to legacy quality gates.
 
         Returns:
             True if feature was completed, False if validation/tests failed
         """
-        # Run quality gate validation
+        # Use Phase 3 verification if configured
+        if self.config.verification:
+            return await self._complete_feature_with_verification(
+                session, feature, result
+            )
+
+        # Legacy quality gates flow
         validator = QualityGateValidator(self.project_path)
         validation_report = validator.validate(feature, self.config.default_quality_gates)
 
@@ -681,6 +690,120 @@ class AutonomousHarness:
         )
 
         console.print(f"[green]OK[/green] Feature completed: {feature.name}")
+        return True
+
+    async def _complete_feature_with_verification(
+        self,
+        session: AgentSession,
+        feature: Feature,
+        result: SessionResult
+    ) -> bool:
+        """Complete feature using Phase 3 verification system.
+
+        Runs comprehensive verification including:
+        - V1: Playwright E2E tests
+        - V2: Pre-complete hooks
+        - V4: Coverage checking
+        - V5: Lint/type checks
+        - V6: Manual approval (if required)
+
+        Returns:
+            True if feature was completed, False if verification failed
+        """
+        console.print("\n[bold blue]Running feature verification...[/bold blue]")
+
+        verifier = FeatureVerifier(self.project_path, self.config.verification)
+        verification_report = verifier.verify(feature, interactive=True)
+
+        # Log verification results
+        for r in verification_report.results:
+            if r.skipped:
+                console.print(f"[dim]⊘ {r.name}: {r.message}[/dim]")
+            elif r.passed:
+                duration_str = f" ({r.duration_seconds:.1f}s)" if r.duration_seconds else ""
+                console.print(f"[green]✓[/green] {r.name}: {r.message}{duration_str}")
+            else:
+                console.print(f"[red]✗[/red] {r.name}: {r.message}")
+                if r.details:
+                    # Show truncated details
+                    details = r.details[:500] + "..." if len(r.details) > 500 else r.details
+                    console.print(f"[dim]{details}[/dim]")
+
+        # Show coverage if available
+        if verification_report.coverage:
+            cov = verification_report.coverage
+            console.print(f"\n[bold]Coverage:[/bold] {cov.coverage_percent:.1f}% "
+                         f"({cov.covered_lines}/{cov.total_lines} lines)")
+
+        # Check if verification passed
+        if not verification_report.passed:
+            failed_checks = [r.name for r in verification_report.results if not r.passed and not r.skipped]
+            console.print(f"\n[yellow]Feature not completed - verification failed[/yellow]")
+
+            # Log the verification failures
+            self.progress.append_entry(ProgressEntry(
+                session_id=session.session_id,
+                feature_id=feature.id,
+                action="verification_failed",
+                summary=f"Verification failed: {', '.join(failed_checks)}"
+            ))
+
+            # Add note to feature
+            self.backlog.add_implementation_note(
+                feature.id,
+                f"Session {session.session_id}: Verification failed - {', '.join(failed_checks)}"
+            )
+            self.save_backlog()
+
+            return False
+
+        # Check manual approval status
+        if verification_report.requires_approval and not verification_report.approved:
+            console.print(f"\n[yellow]Feature not completed - manual approval required but not given[/yellow]")
+
+            self.progress.append_entry(ProgressEntry(
+                session_id=session.session_id,
+                feature_id=feature.id,
+                action="approval_required",
+                summary="Manual approval required but not given"
+            ))
+
+            return False
+
+        # Get commit info
+        git_status = self.git.get_status()
+        commit_hash = git_status.last_commit_hash
+
+        # Log completion
+        approval_note = ""
+        if verification_report.requires_approval:
+            approval_note = f" (approved by {verification_report.approved_by})"
+
+        self.progress.log_feature_completed(
+            session_id=session.session_id,
+            feature=feature,
+            summary=f"{result.summary or 'Feature completed'}{approval_note}",
+            commit_hash=commit_hash
+        )
+
+        # Update backlog
+        self.backlog.mark_feature_completed(
+            feature.id,
+            f"Completed in session {session.session_id}{approval_note}"
+        )
+        self.save_backlog()
+
+        # Clear session state - no longer need recovery
+        session.clear_state()
+
+        # Record session to history
+        self._record_session(
+            session, feature, result,
+            outcome=SessionOutcome.SUCCESS,
+            commit_hash=commit_hash
+        )
+
+        console.print(f"\n[green]✓[/green] Feature completed: {feature.name}")
         return True
 
     async def _run_coding_session_with_retry(self, feature: Feature) -> SessionResult:

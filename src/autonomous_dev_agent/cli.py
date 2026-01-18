@@ -11,7 +11,7 @@ from rich.table import Table
 
 from .models import (
     Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig, SessionMode,
-    Severity, DiscoveryResult,
+    Severity, DiscoveryResult, VerificationConfig,
 )
 from .harness import AutonomousHarness
 from .git_manager import GitManager
@@ -21,6 +21,7 @@ from .discovery import (
 )
 from .discovery.reviewer import CodeReviewer
 from .discovery.requirements import RequirementsExtractor
+from .verification import FeatureVerifier, PreCompleteHook
 
 console = Console()
 
@@ -740,6 +741,151 @@ def costs(project_path: str):
             outcome_table.add_row(f"[{color}]{outcome}[/{color}]", str(count))
 
         console.print(outcome_table)
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+@click.option('--feature', '-f', help='Specific feature ID to verify (default: all in_progress)')
+@click.option('--test-command', help='Unit test command (e.g., "npm test", "pytest")')
+@click.option('--e2e-command', help='E2E test command (e.g., "npx playwright test")')
+@click.option('--lint-command', help='Lint command (e.g., "npm run lint", "ruff check .")')
+@click.option('--type-check', help='Type check command (e.g., "npm run typecheck", "mypy .")')
+@click.option('--coverage-command', help='Coverage command (e.g., "npm run test:coverage")')
+@click.option('--coverage-threshold', type=float, help='Minimum coverage percentage')
+@click.option('--require-approval', is_flag=True, help='Require manual approval')
+@click.option('--dry-run', is_flag=True, help='Show what would be verified without running')
+def verify(
+    project_path: str,
+    feature: Optional[str],
+    test_command: Optional[str],
+    e2e_command: Optional[str],
+    lint_command: Optional[str],
+    type_check: Optional[str],
+    coverage_command: Optional[str],
+    coverage_threshold: Optional[float],
+    require_approval: bool,
+    dry_run: bool
+):
+    """Run verification checks on features.
+
+    Runs comprehensive verification including tests, linting, type checking,
+    coverage analysis, and optional manual approval.
+
+    \b
+    Examples:
+      ada verify .                           # Verify all in_progress features
+      ada verify . -f my-feature             # Verify specific feature
+      ada verify . --test-command "pytest"   # Use custom test command
+      ada verify . --require-approval        # Require manual approval
+      ada verify . --dry-run                 # Preview without running
+    """
+    path = Path(project_path)
+    backlog_file = path / "feature-list.json"
+
+    if not backlog_file.exists():
+        console.print(f"[red]No backlog found at {backlog_file}[/red]")
+        return
+
+    backlog = Backlog.model_validate_json(backlog_file.read_text())
+
+    # Build verification config from options
+    config = VerificationConfig(
+        test_command=test_command or "npm test",
+        e2e_command=e2e_command,
+        lint_command=lint_command,
+        type_check_command=type_check,
+        coverage_command=coverage_command,
+        coverage_threshold=coverage_threshold,
+        require_manual_approval=require_approval,
+    )
+
+    # Get features to verify
+    if feature:
+        features_to_verify = [f for f in backlog.features if f.id == feature]
+        if not features_to_verify:
+            console.print(f"[red]Feature not found: {feature}[/red]")
+            return
+    else:
+        features_to_verify = [f for f in backlog.features if f.status == FeatureStatus.IN_PROGRESS]
+        if not features_to_verify:
+            console.print("[yellow]No in_progress features to verify[/yellow]")
+            console.print("[dim]Use -f <feature_id> to verify a specific feature[/dim]")
+            return
+
+    console.print(f"\n[bold]Verifying {len(features_to_verify)} feature(s)[/bold]\n")
+
+    if dry_run:
+        console.print("[yellow]Dry run - showing configuration:[/yellow]")
+        console.print(f"  Test command: {config.test_command}")
+        console.print(f"  E2E command: {config.e2e_command or 'Not configured'}")
+        console.print(f"  Lint command: {config.lint_command or 'Not configured'}")
+        console.print(f"  Type check: {config.type_check_command or 'Not configured'}")
+        console.print(f"  Coverage: {config.coverage_command or 'Not configured'}")
+        if config.coverage_threshold:
+            console.print(f"  Coverage threshold: {config.coverage_threshold}%")
+        console.print(f"  Manual approval: {'Required' if config.require_manual_approval else 'Not required'}")
+        console.print(f"\nFeatures to verify:")
+        for f in features_to_verify:
+            console.print(f"  - {f.id}: {f.name}")
+        return
+
+    verifier = FeatureVerifier(path, config)
+
+    # Verify each feature
+    for feat in features_to_verify:
+        console.print(f"\n{'=' * 60}")
+        console.print(f"[bold]Verifying: {feat.name}[/bold]")
+        console.print(f"[dim]{feat.description}[/dim]")
+        console.print("=" * 60)
+
+        report = verifier.verify(feat, interactive=True)
+
+        # Display results
+        for r in report.results:
+            if r.skipped:
+                console.print(f"  [dim]⊘ {r.name}: {r.message}[/dim]")
+            elif r.passed:
+                duration_str = f" ({r.duration_seconds:.1f}s)" if r.duration_seconds else ""
+                console.print(f"  [green]✓[/green] {r.name}: {r.message}{duration_str}")
+            else:
+                console.print(f"  [red]✗[/red] {r.name}: {r.message}")
+                if r.details:
+                    details = r.details[:300] + "..." if len(r.details) > 300 else r.details
+                    console.print(f"    [dim]{details}[/dim]")
+
+        # Show coverage
+        if report.coverage:
+            console.print(f"\n  [bold]Coverage:[/bold] {report.coverage.coverage_percent:.1f}%")
+
+        # Summary
+        if report.passed:
+            approval_note = " (approved)" if report.requires_approval and report.approved else ""
+            console.print(f"\n  [green]✓ Verification passed{approval_note}[/green]")
+        else:
+            console.print(f"\n  [red]✗ Verification failed[/red]")
+
+
+@main.command('init-hooks')
+@click.argument('project_path', type=click.Path(exists=True))
+def init_hooks(project_path: str):
+    """Create sample pre-complete hook scripts.
+
+    Creates a sample hook script in .ada/hooks/ that you can customize.
+    The hook runs before any feature is marked complete.
+    """
+    path = Path(project_path)
+
+    hook_runner = PreCompleteHook(path)
+    hook_path = hook_runner.create_sample_hook()
+
+    console.print(f"[green]OK[/green] Created sample hook at: {hook_path}")
+    console.print(f"\nEdit this file to add your custom validation logic.")
+    console.print(f"The hook receives these environment variables:")
+    console.print(f"  ADA_PROJECT_PATH - Project root path")
+    console.print(f"  ADA_FEATURE_ID - Feature being completed")
+    console.print(f"  ADA_FEATURE_NAME - Feature name")
+    console.print(f"  ADA_FEATURE_CATEGORY - Feature category")
+    console.print(f"\nExit with 0 to allow completion, non-zero to block.")
 
 
 if __name__ == '__main__':

@@ -288,7 +288,7 @@ class HarnessConfig(BaseModel):
         description="Maximum sessions before stopping (None = unlimited)"
     )
 
-    # Testing
+    # Testing (legacy - prefer verification config)
     test_command: Optional[str] = Field(
         default=None,
         description="Command to run tests before marking feature complete (e.g., 'pytest', 'npm test')"
@@ -334,6 +334,12 @@ class HarnessConfig(BaseModel):
     progress_keep_entries: int = Field(
         default=100,
         description="Number of recent entries to keep after rotation"
+    )
+
+    # Phase 3: Verification configuration
+    verification: Optional["VerificationConfig"] = Field(
+        default=None,
+        description="Verification settings for Phase 3 quality gates"
     )
 
 
@@ -592,3 +598,160 @@ class DiscoveryState(BaseModel):
         """Mark an issue as resolved."""
         if issue_id not in self.resolved_issue_ids:
             self.resolved_issue_ids.append(issue_id)
+
+
+# =============================================================================
+# Verification Models (Phase 3)
+# =============================================================================
+
+
+class VerificationConfig(BaseModel):
+    """Configuration for feature verification (Phase 3 quality gates).
+
+    These settings control what validations run before a feature is marked complete.
+    """
+    # Test commands
+    test_command: Optional[str] = Field(
+        default="npm test",
+        description="Unit test command to run (None to skip)"
+    )
+    e2e_command: Optional[str] = Field(
+        default=None,
+        description="E2E test command (e.g., 'npx playwright test')"
+    )
+    e2e_test_patterns: dict[str, str] = Field(
+        default_factory=dict,
+        description="Feature-specific E2E test patterns (feature_id -> grep pattern)"
+    )
+
+    # Lint and type checking
+    lint_command: Optional[str] = Field(
+        default=None,
+        description="Lint command to run (e.g., 'npm run lint', 'ruff check .')"
+    )
+    type_check_command: Optional[str] = Field(
+        default=None,
+        description="Type check command (e.g., 'npm run typecheck', 'mypy .')"
+    )
+
+    # Coverage
+    coverage_command: Optional[str] = Field(
+        default=None,
+        description="Command to run tests with coverage (e.g., 'npm run test:coverage')"
+    )
+    coverage_threshold: Optional[float] = Field(
+        default=None,
+        description="Minimum coverage percentage required (e.g., 80.0)"
+    )
+    coverage_report_path: Optional[str] = Field(
+        default=None,
+        description="Path to coverage report JSON (e.g., 'coverage/coverage-summary.json')"
+    )
+
+    # Hooks
+    pre_complete_hook: Optional[str] = Field(
+        default=None,
+        description="Path to pre-complete hook script (default: .ada/hooks/pre-complete.sh)"
+    )
+    hooks_dir: str = Field(
+        default=".ada/hooks",
+        description="Directory for hook scripts"
+    )
+
+    # Visual regression
+    visual_regression_enabled: bool = Field(
+        default=False,
+        description="Enable visual regression testing with Playwright"
+    )
+    baseline_screenshots_dir: str = Field(
+        default=".ada/baselines",
+        description="Directory for baseline screenshots"
+    )
+    screenshot_diff_threshold: float = Field(
+        default=0.1,
+        description="Maximum allowed pixel difference ratio (0.1 = 10%)"
+    )
+
+    # Manual approval
+    require_manual_approval: bool = Field(
+        default=False,
+        description="Require human approval before marking feature complete"
+    )
+    approval_features: list[str] = Field(
+        default_factory=list,
+        description="Feature IDs that require manual approval (empty = use global setting)"
+    )
+
+    # Timeouts
+    test_timeout_seconds: int = Field(
+        default=300,
+        description="Timeout for test commands (5 minutes default)"
+    )
+    e2e_timeout_seconds: int = Field(
+        default=600,
+        description="Timeout for E2E tests (10 minutes default)"
+    )
+
+
+class VerificationResult(BaseModel):
+    """Result of a verification check."""
+    name: str = Field(..., description="Name of the verification check")
+    passed: bool = Field(..., description="Whether the check passed")
+    message: str = Field(..., description="Human-readable result message")
+    duration_seconds: Optional[float] = Field(
+        default=None,
+        description="How long the check took"
+    )
+    details: Optional[str] = Field(
+        default=None,
+        description="Detailed output or error message"
+    )
+    skipped: bool = Field(
+        default=False,
+        description="Whether the check was skipped"
+    )
+
+
+class CoverageReport(BaseModel):
+    """Parsed coverage report data."""
+    total_lines: int = Field(default=0, description="Total lines of code")
+    covered_lines: int = Field(default=0, description="Lines covered by tests")
+    coverage_percent: float = Field(default=0.0, description="Coverage percentage")
+    uncovered_files: list[str] = Field(
+        default_factory=list,
+        description="Files with no coverage"
+    )
+    low_coverage_files: list[tuple[str, float]] = Field(
+        default_factory=list,
+        description="Files with coverage below threshold (file, percent)"
+    )
+
+
+class VerificationReport(BaseModel):
+    """Complete verification report for a feature."""
+    feature_id: str = Field(..., description="Feature being verified")
+    passed: bool = Field(..., description="Whether all required checks passed")
+    results: list[VerificationResult] = Field(
+        default_factory=list,
+        description="Individual check results"
+    )
+    coverage: Optional[CoverageReport] = Field(
+        default=None,
+        description="Coverage report if coverage check was run"
+    )
+    requires_approval: bool = Field(
+        default=False,
+        description="Whether manual approval is required"
+    )
+    approved: bool = Field(
+        default=False,
+        description="Whether manual approval was given"
+    )
+    approved_by: Optional[str] = Field(
+        default=None,
+        description="Who approved (if manual approval given)"
+    )
+    timestamp: datetime = Field(
+        default_factory=datetime.now,
+        description="When verification was run"
+    )

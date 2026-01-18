@@ -370,18 +370,18 @@ ada run <path> --model claude-opus-4-5-20251101
 
 **Goal**: Ensure features actually work before marking complete.
 
-**Status**: 📋 Planned
+**Status**: ✅ Complete (2026-01-18)
 
 **Note**: Use Playwright CLI directly, not via MCP server.
 
 | ID | Feature | Description | Status | Priority |
 |----|---------|-------------|--------|----------|
-| V1 | **Playwright CLI Integration** | Run Playwright tests via CLI for E2E validation. Configure test patterns per feature. `npx playwright test --grep "feature-name"` | ⏳ Pending | Critical |
-| V2 | **Pre-Complete Hooks** | Run custom validation scripts before marking feature done. Configurable per-project in `.ada/hooks/pre-complete.sh`. | ⏳ Pending | High |
+| V1 | **Playwright CLI Integration** | Run Playwright tests via CLI for E2E validation. Configure test patterns per feature. `npx playwright test --grep "feature-name"` | ✅ Done | Critical |
+| V2 | **Pre-Complete Hooks** | Run custom validation scripts before marking feature done. Configurable per-project in `.ada/hooks/pre-complete.sh`. | ✅ Done | High |
 | V3 | **Visual Regression** | Screenshot comparison using Playwright. Store baseline screenshots, compare after implementation. Flag visual changes for review. | ⏳ Pending | High |
-| V4 | **Test Coverage Check** | Verify new code has tests. Use coverage tools (nyc, coverage.py) to check coverage delta. Warn if coverage drops. | ⏳ Pending | Medium |
-| V5 | **Lint/Type Check** | Run linters (ESLint, Ruff) and type checkers (TypeScript, mypy) as quality gates. Fail if errors introduced. | ⏳ Pending | Medium |
-| V6 | **Manual Approval Mode** | Option to pause and require human approval before marking feature complete. Useful for critical features. | ⏳ Pending | Low |
+| V4 | **Test Coverage Check** | Verify new code has tests. Use coverage tools (nyc, coverage.py) to check coverage delta. Warn if coverage drops. | ✅ Done | Medium |
+| V5 | **Lint/Type Check** | Run linters (ESLint, Ruff) and type checkers (TypeScript, mypy) as quality gates. Fail if errors introduced. | ✅ Done | Medium |
+| V6 | **Manual Approval Mode** | Option to pause and require human approval before marking feature complete. Useful for critical features. | ✅ Done | Low |
 
 ### Playwright Integration Design
 
@@ -461,4 +461,5 @@ These features are available if needed later:
 | 0.2.0 | 2026-01-18 | Dual mode (CLI/SDK), verbose logging, Windows fixes |
 | 0.3.0 | 2026-01-18 | Phase 1 reliability features (retry, test validation, resume, error classification, rollback, health checks, graceful shutdown, timeout) |
 | 0.4.0 | 2026-01-18 | Phase 1.5 discovery (codebase analysis, code review, test gaps, requirements extraction, backlog generation, best practices, incremental tracking) + Phase 2 observability dashboard (cost tracking, model selection, session history, FastAPI backend, React UI) |
-| 0.5.0 | TBD | Phase 3 verification features |
+| 0.5.0 | 2026-01-18 | Phase 3 verification features (Playwright E2E, pre-complete hooks, coverage checking, lint/type checks, manual approval) |
+| 0.6.0 | TBD | Visual regression testing, cost projections, alerts/notifications |
