@@ -68,7 +68,7 @@ class ErrorCategory(Enum):
 
 **Goal**: Enable ADA to work on existing/partially-implemented projects by analyzing the codebase and generating a backlog of remaining work.
 
-**Status**: 📋 Planned
+**Status**: ✅ Complete (2026-01-18)
 
 **Use Cases**:
 - Project implemented but not tested
@@ -78,13 +78,13 @@ class ErrorCategory(Enum):
 
 | ID | Feature | Description | Status | Priority |
 |----|---------|-------------|--------|----------|
-| D1 | **Codebase Analysis** | Analyze project structure, tech stack, dependencies, file organization. Generate a project summary for agent context. | ⏳ Pending | Critical |
-| D2 | **Code Review Agent** | Automated code review: identify bugs, security issues, code smells, missing error handling, inconsistent patterns. Generate issues list. | ⏳ Pending | Critical |
-| D3 | **Test Gap Analysis** | Identify untested code, missing test files, low coverage areas. Map features to tests. Flag critical paths without tests. | ⏳ Pending | Critical |
-| D4 | **Requirements Extraction** | Parse README, docs, comments, existing tests to understand intended functionality. Build a "definition of done" checklist. | ⏳ Pending | High |
-| D5 | **Backlog Generation** | Convert gaps and issues into prioritized feature-list.json. Estimate effort, set priorities, detect dependencies automatically. | ⏳ Pending | High |
-| D6 | **Diff from Ideal** | Compare current state against best practices (linting, typing, tests, docs, security). Generate remediation tasks. | ⏳ Pending | Medium |
-| D7 | **Incremental Discovery** | Re-run discovery after each session to update remaining work. Track progress toward "done" state. | ⏳ Pending | Medium |
+| D1 | **Codebase Analysis** | Analyze project structure, tech stack, dependencies, file organization. Generate a project summary for agent context. | ✅ Done | Critical |
+| D2 | **Code Review Agent** | Automated code review: identify bugs, security issues, code smells, missing error handling, inconsistent patterns. Generate issues list. | ✅ Done | Critical |
+| D3 | **Test Gap Analysis** | Identify untested code, missing test files, low coverage areas. Map features to tests. Flag critical paths without tests. | ✅ Done | Critical |
+| D4 | **Requirements Extraction** | Parse README, docs, comments, existing tests to understand intended functionality. Build a "definition of done" checklist. | ✅ Done | High |
+| D5 | **Backlog Generation** | Convert gaps and issues into prioritized feature-list.json. Estimate effort, set priorities, detect dependencies automatically. | ✅ Done | High |
+| D6 | **Diff from Ideal** | Compare current state against best practices (linting, typing, tests, docs, security). Generate remediation tasks. | ✅ Done | Medium |
+| D7 | **Incremental Discovery** | Re-run discovery after each session to update remaining work. Track progress toward "done" state. | ✅ Done | Medium |
 
 ### Phase 1.5 Implementation Notes
 
@@ -460,5 +460,5 @@ These features are available if needed later:
 | 0.1.0 | 2026-01-17 | Initial implementation: CLI, backlog, progress tracking |
 | 0.2.0 | 2026-01-18 | Dual mode (CLI/SDK), verbose logging, Windows fixes |
 | 0.3.0 | 2026-01-18 | Phase 1 reliability features (retry, test validation, resume, error classification, rollback, health checks, graceful shutdown, timeout) |
-| 0.4.0 | 2026-01-18 | Phase 2 observability dashboard (cost tracking, model selection, session history, FastAPI backend, React UI) |
+| 0.4.0 | 2026-01-18 | Phase 1.5 discovery (codebase analysis, code review, test gaps, requirements extraction, backlog generation, best practices, incremental tracking) + Phase 2 observability dashboard (cost tracking, model selection, session history, FastAPI backend, React UI) |
 | 0.5.0 | TBD | Phase 3 verification features |
