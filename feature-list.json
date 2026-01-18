@@ -1,0 +1,862 @@
+{
+  "project_name": "Autonomous Dev Agent (ADA)",
+  "project_path": "C:\\Users\\fbrun\\Documents\\GitHub\\autonomous-dev-agent",
+  "features": [
+    {
+      "id": "R1-retry-logic",
+      "name": "Retry Logic",
+      "description": "Retry failed sessions with exponential backoff. Configurable max retries (default: 3). Distinguish between retryable errors (network, rate limit, SDK crash) and permanent errors (auth, billing).",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Exponential backoff with configurable base delay",
+        "Max retries configurable (default 3)",
+        "Retryable errors: transient, rate_limit, sdk_crash",
+        "Non-retryable errors: billing, auth"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - Critical priority",
+        "Implemented in session.py with RetryConfig"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "R2-test-validation",
+      "name": "Test Validation",
+      "description": "Run project tests before marking features complete. If tests fail, keep feature as in_progress and log the failure. Configurable test command per project.",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Tests run after each session before marking complete",
+        "Failed tests keep feature as in_progress",
+        "Test command configurable per project",
+        "Failure notes added to implementation_notes"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - Critical priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "R3-session-resume",
+      "name": "Session Resume",
+      "description": "Save session checkpoints to .ada_session_state.json. On restart, offer to resume from last checkpoint or start fresh. Track partial progress within features.",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Session state saved to .ada_session_state.json",
+        "Resume option offered on restart",
+        "Partial progress tracked within features"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - High priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "R4-error-classification",
+      "name": "Error Classification",
+      "description": "Classify errors into categories: transient (retry), billing (stop, notify), auth (stop, notify), unknown (retry with backoff).",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "ErrorCategory enum with all categories",
+        "Transient errors trigger retry",
+        "Billing/auth errors stop execution",
+        "Unknown errors retry once then stop"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - High priority",
+        "ErrorCategory enum in models.py"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "R5-rollback-capability",
+      "name": "Rollback Capability",
+      "description": "If tests fail after a session, offer to rollback to last known good commit. Use git reflog for safety. Never auto-rollback without confirmation in interactive mode.",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Rollback offered when tests fail",
+        "Uses git reflog for safety",
+        "No auto-rollback in interactive mode"
+      ],
+      "depends_on": ["R2-test-validation"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - High priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "R6-health-checks",
+      "name": "Health Checks",
+      "description": "Pre-flight checks before starting: API connectivity, git clean status, disk space, required tools installed. Fail fast with clear error messages.",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "API connectivity check",
+        "Git clean status check",
+        "Disk space check",
+        "Required tools verification",
+        "Clear error messages on failure"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "R7-graceful-shutdown",
+      "name": "Graceful Shutdown",
+      "description": "Handle Ctrl+C (SIGINT) cleanly: commit current work, write handoff notes to progress file, save session state, exit cleanly.",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "SIGINT handler registered",
+        "Current work committed on shutdown",
+        "Handoff notes written to progress file",
+        "Session state saved",
+        "Clean exit"
+      ],
+      "depends_on": ["R3-session-resume"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "R8-session-timeout",
+      "name": "Session Timeout",
+      "description": "Configurable max duration per session (default: 30 minutes). Prevents runaway sessions. Triggers clean handoff when timeout approaches.",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Max session duration configurable",
+        "Default 30 minutes",
+        "Clean handoff triggered before timeout"
+      ],
+      "depends_on": ["R7-graceful-shutdown"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1: Reliability - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "D1-codebase-analysis",
+      "name": "Codebase Analysis",
+      "description": "Analyze project structure, tech stack, dependencies, file organization. Generate a project summary for agent context.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Detect tech stack (Python, Node, etc.)",
+        "Detect frameworks (FastAPI, React, etc.)",
+        "Map directory structure",
+        "Find entry points",
+        "Parse dependencies from lockfiles",
+        "Count lines by type (code/test/docs)"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1.5: Discovery - Critical priority",
+        "Implemented in discovery/codebase_analyzer.py"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "D2-code-review-agent",
+      "name": "Code Review Agent",
+      "description": "Automated code review: identify bugs, security issues, code smells, missing error handling, inconsistent patterns. Generate issues list.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Identify bugs and logic errors",
+        "Detect security vulnerabilities (OWASP Top 10)",
+        "Find error handling gaps",
+        "Detect code smells and anti-patterns",
+        "Check for missing input validation",
+        "Detect hardcoded secrets",
+        "Output as JSON with severity levels"
+      ],
+      "depends_on": ["D1-codebase-analysis"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1.5: Discovery - Critical priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "D3-test-gap-analysis",
+      "name": "Test Gap Analysis",
+      "description": "Identify untested code, missing test files, low coverage areas. Map features to tests. Flag critical paths without tests.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Identify files without tests",
+        "Map source files to test files",
+        "Flag critical paths without coverage",
+        "Generate test gap report"
+      ],
+      "depends_on": ["D1-codebase-analysis"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1.5: Discovery - Critical priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "D4-requirements-extraction",
+      "name": "Requirements Extraction",
+      "description": "Parse README, docs, comments, existing tests to understand intended functionality. Build a definition of done checklist.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Parse README for requirements",
+        "Extract requirements from comments",
+        "Analyze existing tests for expected behavior",
+        "Generate definition of done checklist"
+      ],
+      "depends_on": ["D1-codebase-analysis"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1.5: Discovery - High priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "D5-backlog-generation",
+      "name": "Backlog Generation",
+      "description": "Convert gaps and issues into prioritized feature-list.json. Estimate effort, set priorities, detect dependencies automatically.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Convert code issues to features",
+        "Convert test gaps to features",
+        "Auto-prioritize by severity",
+        "Detect dependencies between features",
+        "Output valid feature-list.json"
+      ],
+      "depends_on": ["D2-code-review-agent", "D3-test-gap-analysis"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1.5: Discovery - High priority",
+        "Implemented in discovery/backlog_generator.py"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "D6-diff-from-ideal",
+      "name": "Diff from Ideal",
+      "description": "Compare current state against best practices (linting, typing, tests, docs, security). Generate remediation tasks.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Check linting configuration",
+        "Check type checking setup",
+        "Check test coverage setup",
+        "Check documentation completeness",
+        "Check security best practices",
+        "Generate remediation tasks"
+      ],
+      "depends_on": ["D1-codebase-analysis"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1.5: Discovery - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "D7-incremental-discovery",
+      "name": "Incremental Discovery",
+      "description": "Re-run discovery after each session to update remaining work. Track progress toward done state.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Discovery can be re-run incrementally",
+        "Previous issues tracked by ID",
+        "Progress toward completion tracked",
+        "New issues detected on re-run"
+      ],
+      "depends_on": ["D5-backlog-generation"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 1.5: Discovery - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O1-cost-tracking",
+      "name": "Cost Tracking",
+      "description": "Track tokens (input/output/cache), calculate API cost per session and per feature. Parse CLI mode JSONL logs. Support both CLI and SDK modes.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Track input/output/cache tokens",
+        "Calculate cost per session",
+        "Calculate cost per feature",
+        "Parse CLI JSONL logs from ~/.claude/projects/",
+        "Support both CLI and SDK modes"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - Critical priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O2-adaptive-model-selection",
+      "name": "Adaptive Model Selection",
+      "description": "Default to Sonnet for most tasks, use Opus only for complex features. Per-feature model override in backlog. Complexity detection based on feature description, effort, and dependencies.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Default to Sonnet",
+        "Auto-select Opus for complex tasks",
+        "Per-feature model_override support",
+        "Complexity detection from description",
+        "Complexity detection from effort estimate",
+        "Complexity detection from dependency count"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - Critical priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O3-dashboard-backend",
+      "name": "Dashboard Backend",
+      "description": "FastAPI server exposing ADA state via REST API. Endpoints: /status, /backlog, /sessions, /progress, /config. WebSocket for live updates.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "FastAPI server running",
+        "/status endpoint",
+        "/backlog endpoint",
+        "/sessions endpoint",
+        "/progress endpoint",
+        "/config endpoint",
+        "WebSocket for live updates"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - Critical priority",
+        "Implemented in api/ directory"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O4-dashboard-ui",
+      "name": "Dashboard UI",
+      "description": "Real-time view: current feature, session progress, backlog status, recent activity. Vite + React + TypeScript with shadcn/ui.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "React 18 + TypeScript + Vite setup",
+        "shadcn/ui components",
+        "Current feature display",
+        "Session progress view",
+        "Backlog status table",
+        "Recent activity feed",
+        "Dark/light theme support"
+      ],
+      "depends_on": ["O3-dashboard-backend"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - Critical priority",
+        "Implemented in ada-dashboard/ directory"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O5-session-history",
+      "name": "Session History",
+      "description": "Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome, feature worked on.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Session start/end time logged",
+        "Duration calculated",
+        "Token usage recorded",
+        "Cost calculated and stored",
+        "Outcome tracked (success/failure/handoff)",
+        "Feature ID linked"
+      ],
+      "depends_on": ["O1-cost-tracking"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - High priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O6-live-log-streaming",
+      "name": "Live Log Streaming",
+      "description": "WebSocket stream of progress file updates. Real-time console output in dashboard.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "WebSocket connection established",
+        "Progress file changes streamed",
+        "Real-time display in dashboard",
+        "Auto-scroll to latest"
+      ],
+      "depends_on": ["O3-dashboard-backend", "O4-dashboard-ui"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - High priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O7-feature-timeline",
+      "name": "Feature Timeline",
+      "description": "Visual timeline/Gantt showing feature progression across sessions. Time spent per feature.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Gantt-style timeline view",
+        "Feature progression visualization",
+        "Time spent per feature displayed",
+        "Session markers on timeline"
+      ],
+      "depends_on": ["O4-dashboard-ui", "O5-session-history"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O8-cost-projections",
+      "name": "Cost Projections",
+      "description": "Estimate remaining cost based on: features pending, average cost per feature, historical data.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Calculate average cost per feature",
+        "Estimate remaining cost",
+        "Display projection in dashboard",
+        "Update projection as features complete"
+      ],
+      "depends_on": ["O1-cost-tracking", "O5-session-history"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "O9-alerts-notifications",
+      "name": "Alerts & Notifications",
+      "description": "Desktop notifications (Windows toast) on: completion, failure, billing warning. Optional email/webhook.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 70,
+      "acceptance_criteria": [
+        "Windows toast notifications",
+        "Completion notifications",
+        "Failure notifications",
+        "Billing warning notifications"
+      ],
+      "depends_on": ["O4-dashboard-ui"],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 2: Observability - Low priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "V1-playwright-integration",
+      "name": "Playwright CLI Integration",
+      "description": "Run Playwright tests via CLI for E2E validation. Configure test patterns per feature.",
+      "category": "testing",
+      "status": "completed",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Playwright CLI invocation working",
+        "Test patterns configurable per feature",
+        "Results parsed and reported",
+        "Feature-specific grep patterns"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 3: Verification - Critical priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "V2-pre-complete-hooks",
+      "name": "Pre-Complete Hooks",
+      "description": "Run custom validation scripts before marking feature done. Configurable per-project in .ada/hooks/pre-complete.sh.",
+      "category": "infrastructure",
+      "status": "completed",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Hook script location configurable",
+        "Hook runs before feature completion",
+        "Hook failure blocks completion",
+        "Hook output logged"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 3: Verification - High priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "V3-visual-regression",
+      "name": "Visual Regression Testing",
+      "description": "Screenshot comparison using Playwright. Store baseline screenshots, compare after implementation. Flag visual changes for review.",
+      "category": "testing",
+      "status": "pending",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Baseline screenshots stored",
+        "Screenshots taken after implementation",
+        "Pixel-diff comparison performed",
+        "Visual changes flagged for review",
+        "Threshold for acceptable difference configurable"
+      ],
+      "depends_on": ["V1-playwright-integration"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Phase 3: Verification - High priority",
+        "Use Playwright's built-in screenshot comparison"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": "pyright",
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "V4-coverage-check",
+      "name": "Test Coverage Check",
+      "description": "Verify new code has tests. Use coverage tools to check coverage delta. Warn if coverage drops.",
+      "category": "testing",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Coverage measured before/after",
+        "Coverage delta calculated",
+        "Warning if coverage drops",
+        "Configurable coverage threshold"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 3: Verification - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "V5-lint-type-check",
+      "name": "Lint/Type Check Gates",
+      "description": "Run linters (ESLint, Ruff) and type checkers (TypeScript, mypy) as quality gates. Fail if errors introduced.",
+      "category": "testing",
+      "status": "completed",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Lint command configurable",
+        "Type check command configurable",
+        "Errors block feature completion",
+        "Error output included in logs"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 3: Verification - Medium priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "V6-manual-approval",
+      "name": "Manual Approval Mode",
+      "description": "Option to pause and require human approval before marking feature complete. Useful for critical features.",
+      "category": "functional",
+      "status": "completed",
+      "priority": 70,
+      "acceptance_criteria": [
+        "Manual approval flag per feature",
+        "Execution pauses when flag set",
+        "User prompted for approval",
+        "Approval/rejection logged"
+      ],
+      "depends_on": [],
+      "started_at": "2026-01-18T00:00:00",
+      "completed_at": "2026-01-18T12:00:00",
+      "sessions_spent": 1,
+      "implementation_notes": [
+        "Phase 3: Verification - Low priority"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "uncommitted-changes-detection",
+      "name": "Uncommitted Changes Detection",
+      "description": "At session start, detect and analyze uncommitted changes. Categorize (session state, tracking, source, generated), check gitignore gaps, map to requirements, propose resolution.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 85,
+      "acceptance_criteria": [
+        "Run git status at session start",
+        "Categorize changes (session state, tracking, source, generated)",
+        "Detect gitignore gaps for transient files",
+        "Map source changes to features/sessions",
+        "Present analysis with recommendations",
+        "Wait for user approval before resolution",
+        "Log resolution in progress file"
+      ],
+      "depends_on": ["R6-health-checks"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Procedure documented in docs/UNCOMMITTED_CHANGES_PROCEDURE.md",
+        "Should be part of pre-flight health checks"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [
+          "Never commit files matching .env*, credentials*, secrets*",
+          "Warn if any file contains API key patterns"
+        ],
+        "lint_command": "ruff check src/",
+        "type_check_command": "pyright",
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "S1-subagents",
+      "name": "Subagents",
+      "description": "Spawn child agents for independent features. Coordinate via shared progress file. Merge results.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 50,
+      "acceptance_criteria": [
+        "Child agent spawning mechanism",
+        "Shared progress file coordination",
+        "Results merging from multiple agents",
+        "Dependency-aware scheduling"
+      ],
+      "depends_on": ["R3-session-resume", "R7-graceful-shutdown"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Phase 4: Scalability - Medium priority (future)"
+      ],
+      "quality_gates": null,
+      "model_override": "claude-opus-4-5-20251101"
+    },
+    {
+      "id": "S2-multi-project",
+      "name": "Multi-Project Management",
+      "description": "Manage multiple projects from single harness. Project switching, aggregate dashboard.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 30,
+      "acceptance_criteria": [
+        "Multiple project configs supported",
+        "Project switching in CLI",
+        "Aggregate dashboard view",
+        "Per-project cost tracking"
+      ],
+      "depends_on": ["O4-dashboard-ui"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Phase 4: Scalability - Low priority (future)"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    },
+    {
+      "id": "S3-semantic-search",
+      "name": "Semantic Search",
+      "description": "Vector retrieval (embeddings) for large codebases. Help agent find relevant code faster.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 30,
+      "acceptance_criteria": [
+        "Embedding generation for codebase",
+        "Vector storage (local or cloud)",
+        "Semantic search API",
+        "Integration with agent context"
+      ],
+      "depends_on": ["D1-codebase-analysis"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Phase 4: Scalability - Low priority (future)",
+        "Consider using local embeddings to avoid API costs"
+      ],
+      "quality_gates": null,
+      "model_override": "claude-opus-4-5-20251101"
+    },
+    {
+      "id": "S4-git-worktree-support",
+      "name": "Git Worktree Support",
+      "description": "Use git worktrees for parallel feature branches. Each subagent works in isolated worktree.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 30,
+      "acceptance_criteria": [
+        "Worktree creation for features",
+        "Isolated agent execution per worktree",
+        "Worktree cleanup after completion",
+        "Merge coordination"
+      ],
+      "depends_on": ["S1-subagents"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Phase 4: Scalability - Low priority (future)",
+        "Worktree slots documented in CLAUDE.md"
+      ],
+      "quality_gates": null,
+      "model_override": null
+    }
+  ],
+  "created_at": "2026-01-18T13:00:00",
+  "last_updated": "2026-01-18T13:00:00"
+}
