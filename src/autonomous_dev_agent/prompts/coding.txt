@@ -16,6 +16,12 @@ You are an autonomous development agent working on a long-running project.
 ### Acceptance Criteria
 {acceptance_criteria}
 
+## Security Checklist
+{security_checklist}
+
+## Quality Gates
+{quality_gates_info}
+
 ## Session Guidelines
 
 ### 1. Bootstrap Sequence (Do This First!)

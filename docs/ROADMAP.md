@@ -9,7 +9,8 @@
 This roadmap prioritizes reliability and observability over scalability. The goal is to make ADA robust enough for unattended operation on Windows before expanding capabilities.
 
 **Priority Order**:
-1. Reliability (make it work consistently)
+1. Reliability (make it work consistently) ✅
+1.5. Discovery (analyze existing projects, generate backlog)
 2. Observability (see what it's doing, track costs)
 3. Verification (ensure quality before marking complete)
 4. Scalability (handle larger projects - future)
@@ -63,6 +64,145 @@ class ErrorCategory(Enum):
 
 ---
 
+## Phase 1.5: Discovery (Brownfield Projects)
+
+**Goal**: Enable ADA to work on existing/partially-implemented projects by analyzing the codebase and generating a backlog of remaining work.
+
+**Status**: 📋 Planned
+
+**Use Cases**:
+- Project implemented but not tested
+- Project started but abandoned
+- Project needs code review and fixes
+- Onboarding to unfamiliar codebase
+
+| ID | Feature | Description | Status | Priority |
+|----|---------|-------------|--------|----------|
+| D1 | **Codebase Analysis** | Analyze project structure, tech stack, dependencies, file organization. Generate a project summary for agent context. | ⏳ Pending | Critical |
+| D2 | **Code Review Agent** | Automated code review: identify bugs, security issues, code smells, missing error handling, inconsistent patterns. Generate issues list. | ⏳ Pending | Critical |
+| D3 | **Test Gap Analysis** | Identify untested code, missing test files, low coverage areas. Map features to tests. Flag critical paths without tests. | ⏳ Pending | Critical |
+| D4 | **Requirements Extraction** | Parse README, docs, comments, existing tests to understand intended functionality. Build a "definition of done" checklist. | ⏳ Pending | High |
+| D5 | **Backlog Generation** | Convert gaps and issues into prioritized feature-list.json. Estimate effort, set priorities, detect dependencies automatically. | ⏳ Pending | High |
+| D6 | **Diff from Ideal** | Compare current state against best practices (linting, typing, tests, docs, security). Generate remediation tasks. | ⏳ Pending | Medium |
+| D7 | **Incremental Discovery** | Re-run discovery after each session to update remaining work. Track progress toward "done" state. | ⏳ Pending | Medium |
+
+### Phase 1.5 Implementation Notes
+
+**D1: Codebase Analysis**
+```python
+class CodebaseAnalyzer:
+    """Analyze existing project structure."""
+
+    def analyze(self, project_path: Path) -> ProjectSummary:
+        """Generate comprehensive project analysis."""
+        return ProjectSummary(
+            tech_stack=self.detect_tech_stack(),      # Python, Node, etc.
+            frameworks=self.detect_frameworks(),       # FastAPI, React, etc.
+            structure=self.map_directory_structure(),  # Key folders/files
+            entry_points=self.find_entry_points(),     # main.py, index.ts
+            config_files=self.find_configs(),          # pyproject.toml, package.json
+            dependencies=self.parse_dependencies(),    # From lockfiles
+            line_count=self.count_lines_by_type(),     # Code vs test vs docs
+        )
+
+class ProjectSummary(BaseModel):
+    """Summary for agent context."""
+    tech_stack: list[str]
+    frameworks: list[str]
+    structure: dict[str, str]  # path -> description
+    entry_points: list[str]
+    config_files: list[str]
+    dependencies: dict[str, str]
+    line_count: dict[str, int]  # {"code": 5000, "test": 1200, "docs": 300}
+```
+
+**D2: Code Review Agent**
+```python
+class CodeReviewAgent:
+    """Automated code review using Claude."""
+
+    REVIEW_PROMPT = '''
+    Review this codebase for:
+    1. Bugs and logic errors
+    2. Security vulnerabilities (OWASP Top 10)
+    3. Error handling gaps
+    4. Code smells and anti-patterns
+    5. Missing input validation
+    6. Hardcoded secrets/credentials
+    7. Performance issues
+    8. Inconsistent coding patterns
+
+    Output as JSON with severity (critical/high/medium/low) and file locations.
+    '''
+
+    def review(self, files: list[Path]) -> list[CodeIssue]:
+        """Review files and return issues."""
+        pass
+
+class CodeIssue(BaseModel):
+    file: str
+    line: Optional[int]
+    severity: Literal["critical", "high", "medium", "low"]
+    category: str  # bug, security, smell, etc.
+    description: str
+    suggested_fix: Optional[str]
+```
+
+**D5: Backlog Generation**
+```python
+class BacklogGenerator:
+    """Generate feature-list.json from discovery results."""
+
+    def generate(
+        self,
+        code_issues: list[CodeIssue],
+        test_gaps: list[TestGap],
+        requirements: list[Requirement],
+    ) -> list[Feature]:
+        """Convert all gaps into prioritized features."""
+        features = []
+
+        # Critical issues first
+        for issue in code_issues:
+            if issue.severity == "critical":
+                features.append(Feature(
+                    id=f"fix-{issue.category}-{len(features)}",
+                    description=f"Fix {issue.severity} {issue.category}: {issue.description}",
+                    priority="critical",
+                    effort="small",
+                    category="bugfix",
+                ))
+
+        # Then test coverage
+        for gap in test_gaps:
+            features.append(Feature(
+                id=f"test-{gap.module}",
+                description=f"Add tests for {gap.module}",
+                priority="high" if gap.is_critical_path else "medium",
+                effort="medium",
+                category="testing",
+            ))
+
+        return self.prioritize(features)
+```
+
+**CLI Commands:**
+```bash
+# Run discovery on existing project
+ada discover <path>
+
+# Discovery with code review
+ada discover <path> --review
+
+# Discovery and immediately start fixing
+ada discover <path> --fix
+
+# Show what discovery found (dry run)
+ada discover <path> --dry-run
+```
+
+---
+
 ## Phase 2: Observability (Dashboard)
 
 **Goal**: Real-time visibility into agent progress and costs.
@@ -78,14 +218,15 @@ class ErrorCategory(Enum):
 
 | ID | Feature | Description | Status | Priority |
 |----|---------|-------------|--------|----------|
-| O1 | **Cost Tracking** | Track tokens (input/output/cache), calculate API cost per session and per feature. Store in session results and backlog. | ⏳ Pending | Critical |
-| O2 | **Dashboard Backend** | FastAPI server exposing ADA state via REST API. Endpoints: `/status`, `/backlog`, `/sessions`, `/progress`, `/config`. WebSocket for live updates. | ⏳ Pending | Critical |
-| O3 | **Dashboard UI** | Real-time view: current feature, session progress, backlog status, recent activity. Match AgenticContextBuilder design. | ⏳ Pending | Critical |
-| O4 | **Session History** | Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome (success/failure/handoff), feature worked on. | ⏳ Pending | High |
-| O5 | **Live Log Streaming** | WebSocket stream of progress file updates. Real-time console output in dashboard. | ⏳ Pending | High |
-| O6 | **Feature Timeline** | Visual timeline/Gantt showing feature progression across sessions. Time spent per feature. | ⏳ Pending | Medium |
-| O7 | **Cost Projections** | Estimate remaining cost based on: features pending, average cost per feature, historical data. | ⏳ Pending | Medium |
-| O8 | **Alerts/Notifications** | Desktop notifications (Windows toast) on: completion, failure, billing warning. Optional email/webhook. | ⏳ Pending | Low |
+| O1 | **Cost Tracking** | Track tokens (input/output/cache), calculate API cost per session and per feature. Parse CLI mode JSONL logs from `~/.claude/projects/`. Store costs in session results and backlog. Support both CLI and SDK modes. | ⏳ Pending | Critical |
+| O2 | **Adaptive Model Selection** | Default to Sonnet for most tasks, use Opus only for complex features. Per-feature model override in backlog. Complexity detection based on feature description, estimated effort, and dependencies. | ⏳ Pending | Critical |
+| O3 | **Dashboard Backend** | FastAPI server exposing ADA state via REST API. Endpoints: `/status`, `/backlog`, `/sessions`, `/progress`, `/config`. WebSocket for live updates. | ⏳ Pending | Critical |
+| O4 | **Dashboard UI** | Real-time view: current feature, session progress, backlog status, recent activity. Match AgenticContextBuilder design. | ⏳ Pending | Critical |
+| O5 | **Session History** | Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome (success/failure/handoff), feature worked on. | ⏳ Pending | High |
+| O6 | **Live Log Streaming** | WebSocket stream of progress file updates. Real-time console output in dashboard. | ⏳ Pending | High |
+| O7 | **Feature Timeline** | Visual timeline/Gantt showing feature progression across sessions. Time spent per feature. | ⏳ Pending | Medium |
+| O8 | **Cost Projections** | Estimate remaining cost based on: features pending, average cost per feature, historical data. | ⏳ Pending | Medium |
+| O9 | **Alerts/Notifications** | Desktop notifications (Windows toast) on: completion, failure, billing warning. Optional email/webhook. | ⏳ Pending | Low |
 
 ### Phase 2 Dashboard Structure
 
@@ -118,6 +259,109 @@ ada-dashboard/
 │   └── App.tsx
 ├── package.json
 └── vite.config.ts
+```
+
+### Phase 2 Implementation Notes
+
+**O1: Cost Tracking**
+
+Unified cost tracking for both CLI and SDK modes:
+
+```python
+class CostTracker:
+    """Track and calculate costs from Claude usage."""
+
+    # Pricing per 1M tokens (as of 2026-01)
+    PRICING = {
+        "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00, "cache_read": 1.50},
+        "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00, "cache_read": 0.30},
+        "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00, "cache_read": 0.10},
+    }
+
+    def parse_cli_logs(self, project_path: Path) -> UsageStats:
+        """Parse JSONL logs from ~/.claude/projects/<project>/"""
+        # CLI mode stores usage in JSONL files with message.usage
+        pass
+
+    def get_sdk_usage(self, session_result: SessionResult) -> UsageStats:
+        """Extract usage from SDK session result."""
+        # SDK mode returns usage directly in message.usage
+        pass
+
+    def calculate_cost(self, stats: UsageStats, model: str) -> float:
+        """Calculate cost in USD from token counts."""
+        pass
+
+class UsageStats(BaseModel):
+    """Token usage statistics."""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_create_tokens: int = 0
+    model: str = ""
+    session_id: str = ""
+    feature_id: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.now)
+    cost_usd: float = 0.0
+```
+
+**O2: Adaptive Model Selection**
+
+Default to Sonnet, escalate to Opus for complex tasks:
+
+```python
+class ModelSelector:
+    """Select appropriate model based on task complexity."""
+
+    DEFAULT_MODEL = "claude-sonnet-4-20250514"
+    COMPLEX_MODEL = "claude-opus-4-5-20251101"
+
+    # Complexity indicators that trigger Opus
+    COMPLEXITY_KEYWORDS = [
+        "architecture", "refactor", "security", "performance",
+        "database", "migration", "integration", "api design"
+    ]
+
+    def select_model(self, feature: Feature) -> str:
+        """Choose model based on feature complexity."""
+        # 1. Check for explicit model override in feature
+        if feature.model_override:
+            return feature.model_override
+
+        # 2. Check complexity based on effort estimate
+        if feature.effort in ["large", "epic"]:
+            return self.COMPLEX_MODEL
+
+        # 3. Check for complexity keywords in description
+        desc_lower = feature.description.lower()
+        if any(kw in desc_lower for kw in self.COMPLEXITY_KEYWORDS):
+            return self.COMPLEX_MODEL
+
+        # 4. Check dependency count (many deps = complex)
+        if len(feature.depends_on) >= 3:
+            return self.COMPLEX_MODEL
+
+        return self.DEFAULT_MODEL
+
+# Feature model with optional override
+class Feature(BaseModel):
+    id: str
+    description: str
+    effort: Literal["small", "medium", "large", "epic"] = "medium"
+    model_override: Optional[str] = None  # Force specific model
+    # ... other fields
+```
+
+**CLI flag for model selection:**
+```bash
+# Use default adaptive selection
+ada run <path>
+
+# Force specific model for all features
+ada run <path> --model claude-sonnet-4-20250514
+
+# Force Opus for current session only
+ada run <path> --model claude-opus-4-5-20251101
 ```
 
 ---
@@ -198,8 +442,9 @@ These features are available if needed later:
 - **Alternative**: SDK mode (uses API credits, has Windows bugs)
 
 ### Model
-- **Default**: claude-opus-4-5-20251101
-- **Configurable**: Any Claude model via `--model` flag
+- **Default**: claude-sonnet-4-20250514 (cost-effective for most tasks)
+- **Complex tasks**: claude-opus-4-5-20251101 (auto-selected based on feature complexity)
+- **Configurable**: Any Claude model via `--model` flag or per-feature `model_override`
 
 ### Architecture
 - **Monorepo**: Single repo for harness + dashboard

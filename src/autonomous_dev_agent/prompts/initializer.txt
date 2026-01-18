@@ -36,6 +36,15 @@ Set up the development environment and create the initial project artifacts need
    - Overview of what will be built
    - Any observations about the project structure
 
+## Dependency Management
+Ensure lockfiles are generated and committed for reproducible builds:
+- Python: `pip freeze > requirements.txt` or use poetry.lock/uv.lock
+- Node.js: package-lock.json or yarn.lock
+- Go: go.sum
+- Rust: Cargo.lock
+
+If a lockfile doesn't exist and dependencies are declared, generate one before proceeding.
+
 ## Important Guidelines
 - Do NOT start implementing features yet - just set up the environment
 - Leave the codebase in a clean, ready-to-develop state

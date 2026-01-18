@@ -42,6 +42,42 @@ class FeatureCategory(str, Enum):
     INFRASTRUCTURE = "infrastructure"
 
 
+class QualityGates(BaseModel):
+    """Optional quality gates for a feature.
+
+    Quality gates are validation checks that must pass before a feature
+    can be marked as complete. They help prevent common issues like:
+    - Missing tests
+    - Bloated files
+    - Security vulnerabilities
+    - Lint/type errors
+    """
+    require_tests: bool = Field(
+        default=False,
+        description="Require tests to exist for this feature"
+    )
+    max_file_lines: Optional[int] = Field(
+        default=None,
+        description="Maximum lines per file (e.g., 400 to prevent bloat)"
+    )
+    security_checklist: list[str] = Field(
+        default_factory=list,
+        description="Security items to verify (shown to agent in prompt)"
+    )
+    lint_command: Optional[str] = Field(
+        default=None,
+        description="Lint command to run (e.g., 'ruff check .')"
+    )
+    type_check_command: Optional[str] = Field(
+        default=None,
+        description="Type check command (e.g., 'pyright', 'mypy')"
+    )
+    custom_validators: list[str] = Field(
+        default_factory=list,
+        description="Custom shell commands that must exit 0"
+    )
+
+
 class Feature(BaseModel):
     """A single feature/task in the backlog.
 
@@ -76,6 +112,12 @@ class Feature(BaseModel):
     implementation_notes: list[str] = Field(
         default_factory=list,
         description="Notes left by agents during implementation"
+    )
+
+    # Quality gates - optional validation requirements
+    quality_gates: Optional[QualityGates] = Field(
+        default=None,
+        description="Quality gates that must pass before completion"
     )
 
 
@@ -270,4 +312,20 @@ class HarnessConfig(BaseModel):
     cli_max_turns: int = Field(
         default=100,
         description="Maximum agentic turns for CLI mode (prevents runaway sessions)"
+    )
+
+    # Quality gates - defaults applied to all features unless overridden
+    default_quality_gates: Optional[QualityGates] = Field(
+        default=None,
+        description="Default quality gates for all features"
+    )
+
+    # Progress file rotation
+    progress_rotation_threshold_kb: int = Field(
+        default=50,
+        description="Rotate progress file when it exceeds this size in KB"
+    )
+    progress_keep_entries: int = Field(
+        default=100,
+        description="Number of recent entries to keep after rotation"
     )

@@ -29,6 +29,7 @@ from .models import (
 from .progress import ProgressTracker
 from .git_manager import GitManager
 from .session import SessionManager, AgentSession, SessionResult
+from .validators import QualityGateValidator
 
 
 console = Console()
@@ -53,7 +54,12 @@ class AutonomousHarness:
 
         # Core components
         self.backlog: Optional[Backlog] = None
-        self.progress = ProgressTracker(self.project_path, self.config.progress_file)
+        self.progress = ProgressTracker(
+            self.project_path,
+            self.config.progress_file,
+            rotation_threshold_kb=self.config.progress_rotation_threshold_kb,
+            keep_entries=self.config.progress_keep_entries
+        )
         self.git = GitManager(self.project_path)
         self.sessions = SessionManager(self.config, self.project_path)
 
@@ -352,6 +358,47 @@ class AutonomousHarness:
             return "- No specific criteria defined"
         return "\n".join(f"- [ ] {c}" for c in feature.acceptance_criteria)
 
+    def _format_security_checklist(self, feature: Feature) -> str:
+        """Format security checklist from quality gates."""
+        # Get merged gates
+        gates = self._get_merged_gates(feature)
+        if not gates or not gates.security_checklist:
+            return "No security checklist defined for this feature."
+
+        lines = ["Before marking this feature complete, verify:"]
+        for item in gates.security_checklist:
+            lines.append(f"- [ ] {item}")
+        return "\n".join(lines)
+
+    def _format_quality_gates_info(self, feature: Feature) -> str:
+        """Format quality gates information for the prompt."""
+        gates = self._get_merged_gates(feature)
+        if not gates:
+            return "No quality gates configured for this feature."
+
+        info = []
+        if gates.require_tests:
+            info.append("- Tests are required before completion")
+        if gates.max_file_lines:
+            info.append(f"- Files must be under {gates.max_file_lines} lines")
+        if gates.lint_command:
+            info.append(f"- Lint check will run: `{gates.lint_command}`")
+        if gates.type_check_command:
+            info.append(f"- Type check will run: `{gates.type_check_command}`")
+        if gates.custom_validators:
+            info.append(f"- {len(gates.custom_validators)} custom validator(s) configured")
+
+        if not info:
+            return "No quality gates configured for this feature."
+
+        return "The following quality gates must pass:\n" + "\n".join(info)
+
+    def _get_merged_gates(self, feature: Feature):
+        """Get merged quality gates for a feature."""
+        from .validators import QualityGateValidator
+        validator = QualityGateValidator(self.project_path)
+        return validator._merge_gates(feature.quality_gates, self.config.default_quality_gates)
+
     def _format_feature_summary(self) -> str:
         """Create a summary of features for the initializer."""
         if not self.backlog:
@@ -417,7 +464,9 @@ class AutonomousHarness:
             feature_id=feature.id,
             feature_name=feature.name,
             feature_description=feature.description,
-            acceptance_criteria=self._format_acceptance_criteria(feature)
+            acceptance_criteria=self._format_acceptance_criteria(feature),
+            security_checklist=self._format_security_checklist(feature),
+            quality_gates_info=self._format_quality_gates_info(feature)
         )
 
         # Log session start
@@ -498,11 +547,45 @@ class AutonomousHarness:
     ) -> bool:
         """Validate and mark a feature as completed.
 
-        Runs tests if configured before marking complete.
+        Runs quality gate validations and tests before marking complete.
 
         Returns:
-            True if feature was completed, False if tests failed
+            True if feature was completed, False if validation/tests failed
         """
+        # Run quality gate validation
+        validator = QualityGateValidator(self.project_path)
+        validation_report = validator.validate(feature, self.config.default_quality_gates)
+
+        # Log validation results
+        for r in validation_report.results:
+            if r.passed:
+                console.print(f"[green]\u2713[/green] {r.name}: {r.message}")
+            else:
+                console.print(f"[red]\u2717[/red] {r.name}: {r.message}")
+                if r.details:
+                    console.print(f"[dim]{r.details}[/dim]")
+
+        if not validation_report.passed:
+            console.print(f"[yellow]Feature not completed - {validation_report.error_count} quality gate(s) failed[/yellow]")
+
+            # Log the validation failures
+            failed_checks = [r.name for r in validation_report.results if not r.passed]
+            self.progress.append_entry(ProgressEntry(
+                session_id=session.session_id,
+                feature_id=feature.id,
+                action="quality_gates_failed",
+                summary=f"Quality gates failed: {', '.join(failed_checks)}"
+            ))
+
+            # Add note to feature
+            self.backlog.add_implementation_note(
+                feature.id,
+                f"Session {session.session_id}: Quality gates failed - {', '.join(failed_checks)}"
+            )
+            self.save_backlog()
+
+            return False
+
         # Run tests if configured
         tests_passed, test_message = await self._run_tests()
 

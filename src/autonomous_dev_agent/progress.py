@@ -4,6 +4,7 @@ Based on Anthropic's claude-progress.txt pattern: a simple text file that gives
 each new session immediate context about what's been done and what's next.
 """
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -18,11 +19,25 @@ class ProgressTracker:
     1. It's meant to be read by the next agent session as context
     2. Human-readable format for debugging and monitoring
     3. Append-only pattern prevents data loss
+
+    Supports automatic rotation when the file exceeds a size threshold,
+    archiving older entries to prevent unbounded growth.
     """
 
-    def __init__(self, project_path: Path, filename: str = "claude-progress.txt"):
+    # Regex to split the progress file into entries
+    ENTRY_SEPARATOR = re.compile(r'\n(?=={60}\n)')
+
+    def __init__(
+        self,
+        project_path: Path,
+        filename: str = "claude-progress.txt",
+        rotation_threshold_kb: int = 50,
+        keep_entries: int = 100
+    ):
         self.project_path = Path(project_path)
         self.progress_file = self.project_path / filename
+        self.rotation_threshold_kb = rotation_threshold_kb
+        self.keep_entries = keep_entries
 
     def read_progress(self) -> str:
         """Read the full progress file for session context."""
@@ -68,6 +83,9 @@ class ProgressTracker:
 
         with open(self.progress_file, "a", encoding="utf-8") as f:
             f.write("\n".join(lines))
+
+        # Check if rotation is needed after appending
+        self._maybe_rotate()
 
     def log_session_start(self, session_id: str, feature: Optional[Feature] = None) -> None:
         """Log the start of a new session."""
@@ -139,3 +157,90 @@ class ProgressTracker:
 
 """
         self.progress_file.write_text(header, encoding="utf-8")
+
+    def _maybe_rotate(self) -> bool:
+        """Check if rotation is needed and perform it if so.
+
+        Returns:
+            True if rotation was performed, False otherwise
+        """
+        if not self.progress_file.exists():
+            return False
+
+        # Check file size
+        file_size_kb = self.progress_file.stat().st_size / 1024
+
+        if file_size_kb < self.rotation_threshold_kb:
+            return False
+
+        return self._rotate()
+
+    def _rotate(self) -> bool:
+        """Archive older entries and keep recent ones.
+
+        Creates an archive file with timestamp and keeps the most recent
+        entries in the main progress file.
+
+        Returns:
+            True if rotation was successful, False otherwise
+        """
+        if not self.progress_file.exists():
+            return False
+
+        content = self.progress_file.read_text(encoding="utf-8")
+
+        # Split content into header and entries
+        # The header is everything before the first entry separator (===...)
+        parts = self.ENTRY_SEPARATOR.split(content)
+
+        if len(parts) <= 1:
+            # No entries to rotate
+            return False
+
+        # First part is the header (before any entry)
+        header = parts[0]
+        entries = parts[1:]
+
+        if len(entries) <= self.keep_entries:
+            # Not enough entries to warrant rotation
+            return False
+
+        # Split into archive and keep
+        archive_entries = entries[:-self.keep_entries]
+        keep_entries = entries[-self.keep_entries:]
+
+        # Create archive file
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        archive_filename = f"claude-progress-archive-{timestamp}.txt"
+        archive_path = self.project_path / archive_filename
+
+        archive_content = (
+            f"# Claude Progress Archive\n"
+            f"# Archived: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+            f"# Entries: {len(archive_entries)}\n\n"
+        )
+        # Re-add the separator before each entry
+        for entry in archive_entries:
+            archive_content += "\n" + "=" * 60 + "\n" + entry
+
+        archive_path.write_text(archive_content, encoding="utf-8")
+
+        # Rewrite main progress file with kept entries
+        new_content = header + f"\n# Rotated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        new_content += f"# Older entries archived to: {archive_filename}\n\n"
+        for entry in keep_entries:
+            new_content += "\n" + "=" * 60 + "\n" + entry
+
+        self.progress_file.write_text(new_content, encoding="utf-8")
+
+        return True
+
+    def get_archive_files(self) -> list[Path]:
+        """Get list of archive files for this progress file.
+
+        Returns:
+            List of archive file paths, sorted by name (oldest first)
+        """
+        pattern = "claude-progress-archive-*.txt"
+        archives = sorted(self.project_path.glob(pattern))
+        return archives

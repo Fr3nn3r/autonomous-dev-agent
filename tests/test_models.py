@@ -4,7 +4,7 @@ import pytest
 from datetime import datetime
 
 from autonomous_dev_agent.models import (
-    Feature, Backlog, FeatureStatus, FeatureCategory
+    Feature, Backlog, FeatureStatus, FeatureCategory, QualityGates, HarnessConfig
 )
 
 
@@ -123,3 +123,81 @@ class TestBacklog:
         assert backlog.features[0].status == FeatureStatus.COMPLETED
         assert backlog.features[0].completed_at is not None
         assert "Done in session 1" in backlog.features[0].implementation_notes
+
+
+class TestQualityGates:
+    def test_create_default_quality_gates(self):
+        gates = QualityGates()
+        assert gates.require_tests is False
+        assert gates.max_file_lines is None
+        assert gates.security_checklist == []
+        assert gates.lint_command is None
+        assert gates.type_check_command is None
+        assert gates.custom_validators == []
+
+    def test_create_quality_gates_with_all_options(self):
+        gates = QualityGates(
+            require_tests=True,
+            max_file_lines=400,
+            security_checklist=[
+                "Sanitize user input",
+                "No hardcoded secrets"
+            ],
+            lint_command="ruff check .",
+            type_check_command="pyright",
+            custom_validators=["./scripts/check-migrations.sh"]
+        )
+        assert gates.require_tests is True
+        assert gates.max_file_lines == 400
+        assert len(gates.security_checklist) == 2
+        assert gates.lint_command == "ruff check ."
+        assert gates.type_check_command == "pyright"
+        assert len(gates.custom_validators) == 1
+
+    def test_feature_with_quality_gates(self):
+        gates = QualityGates(
+            require_tests=True,
+            max_file_lines=300
+        )
+        feature = Feature(
+            id="auth",
+            name="User Auth",
+            description="Implement authentication",
+            quality_gates=gates
+        )
+        assert feature.quality_gates is not None
+        assert feature.quality_gates.require_tests is True
+        assert feature.quality_gates.max_file_lines == 300
+
+    def test_feature_without_quality_gates(self):
+        feature = Feature(
+            id="simple",
+            name="Simple Feature",
+            description="A simple feature"
+        )
+        assert feature.quality_gates is None
+
+
+class TestHarnessConfigQualityGates:
+    def test_default_quality_gates_none(self):
+        config = HarnessConfig()
+        assert config.default_quality_gates is None
+        assert config.progress_rotation_threshold_kb == 50
+        assert config.progress_keep_entries == 100
+
+    def test_harness_config_with_default_gates(self):
+        gates = QualityGates(
+            require_tests=True,
+            lint_command="ruff check ."
+        )
+        config = HarnessConfig(default_quality_gates=gates)
+        assert config.default_quality_gates is not None
+        assert config.default_quality_gates.require_tests is True
+
+    def test_custom_rotation_settings(self):
+        config = HarnessConfig(
+            progress_rotation_threshold_kb=100,
+            progress_keep_entries=50
+        )
+        assert config.progress_rotation_threshold_kb == 100
+        assert config.progress_keep_entries == 50
