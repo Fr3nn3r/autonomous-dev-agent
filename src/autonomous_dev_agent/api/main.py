@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import status, backlog, sessions, progress
+from .routes import status, backlog, sessions, progress, projections, timeline, alerts
 from .websocket import router as websocket_router
 
 
@@ -27,7 +27,7 @@ def create_app(project_path: Optional[Path] = None) -> FastAPI:
     app = FastAPI(
         title="ADA Dashboard API",
         description="Real-time monitoring for Autonomous Dev Agent",
-        version="0.4.0",
+        version="0.6.0",
     )
 
     # Add CORS middleware for frontend access
@@ -47,6 +47,9 @@ def create_app(project_path: Optional[Path] = None) -> FastAPI:
     app.include_router(backlog.router, prefix="/api", tags=["backlog"])
     app.include_router(sessions.router, prefix="/api", tags=["sessions"])
     app.include_router(progress.router, prefix="/api", tags=["progress"])
+    app.include_router(projections.router, prefix="/api", tags=["projections"])
+    app.include_router(timeline.router, prefix="/api", tags=["timeline"])
+    app.include_router(alerts.router, prefix="/api", tags=["alerts"])
     app.include_router(websocket_router, prefix="/ws", tags=["websocket"])
 
     @app.get("/")
@@ -54,7 +57,7 @@ def create_app(project_path: Optional[Path] = None) -> FastAPI:
         """Root endpoint."""
         return {
             "name": "ADA Dashboard API",
-            "version": "0.4.0",
+            "version": "0.5.0",
             "docs": "/docs",
         }
 

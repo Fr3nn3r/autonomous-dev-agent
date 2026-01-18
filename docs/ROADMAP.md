@@ -224,9 +224,9 @@ ada discover <path> --dry-run
 | O4 | **Dashboard UI** | Real-time view: current feature, session progress, backlog status, recent activity. Match AgenticContextBuilder design. | ✅ Done | Critical |
 | O5 | **Session History** | Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome (success/failure/handoff), feature worked on. | ✅ Done | High |
 | O6 | **Live Log Streaming** | WebSocket stream of progress file updates. Real-time console output in dashboard. | ✅ Done | High |
-| O7 | **Feature Timeline** | Visual timeline/Gantt showing feature progression across sessions. Time spent per feature. | ⏳ Pending | Medium |
-| O8 | **Cost Projections** | Estimate remaining cost based on: features pending, average cost per feature, historical data. | ⏳ Pending | Medium |
-| O9 | **Alerts/Notifications** | Desktop notifications (Windows toast) on: completion, failure, billing warning. Optional email/webhook. | ⏳ Pending | Low |
+| O7 | **Feature Timeline** | Visual timeline/Gantt showing feature progression across sessions. Time spent per feature. | ✅ Done | Medium |
+| O8 | **Cost Projections** | Estimate remaining cost based on: features pending, average cost per feature, historical data. | ✅ Done | Medium |
+| O9 | **Alerts/Notifications** | Desktop notifications (Windows toast) on: completion, failure, billing warning. Optional email/webhook. | ✅ Done | Low |
 
 ### Phase 2 Dashboard Structure
 
@@ -462,4 +462,5 @@ These features are available if needed later:
 | 0.3.0 | 2026-01-18 | Phase 1 reliability features (retry, test validation, resume, error classification, rollback, health checks, graceful shutdown, timeout) |
 | 0.4.0 | 2026-01-18 | Phase 1.5 discovery (codebase analysis, code review, test gaps, requirements extraction, backlog generation, best practices, incremental tracking) + Phase 2 observability dashboard (cost tracking, model selection, session history, FastAPI backend, React UI) |
 | 0.5.0 | 2026-01-18 | Phase 3 verification features (Playwright E2E, pre-complete hooks, coverage checking, lint/type checks, manual approval) |
-| 0.6.0 | TBD | Visual regression testing, cost projections, alerts/notifications |
+| 0.6.0 | 2026-01-18 | Phase 2 completion: Feature timeline (Gantt view), cost projections, alerts/notifications with desktop notifications |
+| 0.7.0 | TBD | Visual regression testing |

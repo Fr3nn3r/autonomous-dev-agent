@@ -35,6 +35,13 @@ from .verification import FeatureVerifier
 from .cost_tracker import CostTracker
 from .session_history import SessionHistory, create_session_record
 from .model_selector import ModelSelector
+from .alert_manager import (
+    AlertManager,
+    create_session_failed_alert,
+    create_feature_completed_alert,
+    create_handoff_alert,
+    create_cost_threshold_alert,
+)
 
 
 console = Console()
@@ -70,6 +77,7 @@ class AutonomousHarness:
         self.session_history = SessionHistory(self.project_path)
         self.cost_tracker = CostTracker(self.config.model)
         self.model_selector = ModelSelector(default_model=self.config.model)
+        self.alert_manager = AlertManager(self.project_path, enable_desktop_notifications=True)
 
         # State
         self.initialized = False
@@ -77,6 +85,7 @@ class AutonomousHarness:
         self._shutdown_requested = False
         self._current_feature: Optional[Feature] = None
         self._total_cost_usd = 0.0
+        self._cost_threshold_alerted = False  # Track if we've already alerted for cost threshold
 
     def _setup_signal_handlers(self) -> None:
         """Set up signal handlers for graceful shutdown."""
@@ -573,6 +582,14 @@ class AutonomousHarness:
 
         console.print(f"[green]OK[/green] Handoff complete. Commit: {commit_hash or 'no changes'}")
 
+        # Create handoff alert
+        create_handoff_alert(
+            self.alert_manager,
+            session_id=session.session_id,
+            feature_id=feature.id,
+            context_percent=result.context_usage_percent
+        )
+
         # Record session to history
         self._record_session(
             session, feature, result,
@@ -689,6 +706,14 @@ class AutonomousHarness:
             commit_hash=commit_hash
         )
 
+        # Create feature completed alert
+        create_feature_completed_alert(
+            self.alert_manager,
+            feature_id=feature.id,
+            feature_name=feature.name,
+            sessions_spent=feature.sessions_spent
+        )
+
         console.print(f"[green]OK[/green] Feature completed: {feature.name}")
         return True
 
@@ -801,6 +826,14 @@ class AutonomousHarness:
             session, feature, result,
             outcome=SessionOutcome.SUCCESS,
             commit_hash=commit_hash
+        )
+
+        # Create feature completed alert
+        create_feature_completed_alert(
+            self.alert_manager,
+            feature_id=feature.id,
+            feature_name=feature.name,
+            sessions_spent=feature.sessions_spent
         )
 
         console.print(f"\n[green]✓[/green] Feature completed: {feature.name}")
@@ -955,6 +988,25 @@ class AutonomousHarness:
 
         # Track cumulative cost
         self._total_cost_usd += result.usage_stats.cost_usd
+
+        # Create alerts based on outcome
+        if outcome == SessionOutcome.FAILURE:
+            create_session_failed_alert(
+                self.alert_manager,
+                session_id=session.session_id,
+                feature_id=feature.id if feature else None,
+                error_message=result.error_message or "Unknown error"
+            )
+
+        # Check cost threshold (alert once when exceeding $10)
+        cost_threshold = 10.0  # Could be made configurable
+        if self._total_cost_usd >= cost_threshold and not self._cost_threshold_alerted:
+            self._cost_threshold_alerted = True
+            create_cost_threshold_alert(
+                self.alert_manager,
+                current_cost=self._total_cost_usd,
+                threshold=cost_threshold
+            )
 
         # Display cost info
         if result.usage_stats.cost_usd > 0:

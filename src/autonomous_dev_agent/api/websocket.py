@@ -229,6 +229,37 @@ async def emit_progress_update(entry: str):
     })
 
 
+async def emit_alert(
+    alert_id: str,
+    alert_type: str,
+    severity: str,
+    title: str,
+    message: str,
+    feature_id: Optional[str] = None,
+    session_id: Optional[str] = None
+):
+    """Emit new alert event.
+
+    Args:
+        alert_id: Unique alert identifier
+        alert_type: Type of alert
+        severity: Alert severity level
+        title: Alert title
+        message: Alert message
+        feature_id: Related feature ID
+        session_id: Related session ID
+    """
+    await manager.broadcast("alert.new", {
+        "id": alert_id,
+        "type": alert_type,
+        "severity": severity,
+        "title": title,
+        "message": message,
+        "feature_id": feature_id,
+        "session_id": session_id,
+    })
+
+
 class FileWatcher:
     """Watches project files for changes and emits events.
 
@@ -257,6 +288,7 @@ class FileWatcher:
             ".ada_session_state.json",
             ".ada_session_history.json",
             "claude-progress.txt",
+            ".ada_alerts.json",
         ]
 
         # Initialize last modification times
@@ -294,6 +326,10 @@ class FileWatcher:
                         })
                     elif filename == ".ada_session_state.json":
                         await manager.broadcast("status.updated", {
+                            "file": filename
+                        })
+                    elif filename == ".ada_alerts.json":
+                        await manager.broadcast("alerts.updated", {
                             "file": filename
                         })
 

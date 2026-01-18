@@ -755,3 +755,39 @@ class VerificationReport(BaseModel):
         default_factory=datetime.now,
         description="When verification was run"
     )
+
+
+# =============================================================================
+# Alert Models (Phase 2 O9)
+# =============================================================================
+
+
+class AlertType(str, Enum):
+    """Type of alert notification."""
+    COST_THRESHOLD = "cost_threshold"
+    SESSION_FAILED = "session_failed"
+    FEATURE_BLOCKED = "feature_blocked"
+    FEATURE_COMPLETED = "feature_completed"
+    HANDOFF_OCCURRED = "handoff_occurred"
+
+
+class AlertSeverity(str, Enum):
+    """Severity level for alerts."""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    SUCCESS = "success"
+
+
+class Alert(BaseModel):
+    """An alert notification for the dashboard."""
+    id: str = Field(..., description="Unique alert identifier")
+    type: AlertType = Field(..., description="Type of alert")
+    severity: AlertSeverity = Field(default=AlertSeverity.INFO, description="Alert severity")
+    title: str = Field(..., description="Short alert title")
+    message: str = Field(..., description="Detailed alert message")
+    timestamp: datetime = Field(default_factory=datetime.now, description="When the alert was created")
+    read: bool = Field(default=False, description="Whether the alert has been read")
+    dismissed: bool = Field(default=False, description="Whether the alert has been dismissed")
+    feature_id: Optional[str] = Field(default=None, description="Related feature ID")
+    session_id: Optional[str] = Field(default=None, description="Related session ID")

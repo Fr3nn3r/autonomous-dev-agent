@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import {
   Activity,
   CheckCircle,
@@ -10,8 +10,11 @@ import {
   RefreshCw,
   Zap
 } from 'lucide-react'
-import { apiClient, type HarnessStatus, type BacklogResponse, type CostSummary } from './lib/api-client'
+import { apiClient } from './lib/api-client'
 import { useWebSocket } from './lib/websocket'
+import { CostProjections } from './components/CostProjections'
+import { FeatureTimeline } from './components/FeatureTimeline'
+import { AlertCenter } from './components/AlertCenter'
 
 function App() {
   const [wsConnected, setWsConnected] = useState(false)
@@ -53,6 +56,7 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-4">
+            <AlertCenter />
             <div className={`flex items-center gap-2 text-sm ${wsConnected ? 'text-green-500' : 'text-red-500'}`}>
               <div className={`w-2 h-2 rounded-full ${wsConnected ? 'bg-green-500' : 'bg-red-500'}`} />
               {wsConnected ? 'Connected' : 'Disconnected'}
@@ -224,6 +228,15 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* Cost Projections & Timeline Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+          <CostProjections />
+          <div /> {/* Placeholder for balance, or add another component */}
+        </div>
+
+        {/* Feature Timeline */}
+        <FeatureTimeline className="mt-6" />
 
         {/* Recent Events */}
         {lastEvent && (
