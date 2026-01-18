@@ -263,15 +263,15 @@ class HarnessConfig(BaseModel):
         description="Trigger handoff when context reaches this percentage"
     )
 
-    # Session mode - CLI is default because SDK has reliability issues on Windows
+    # Session mode - SDK is default for better observability and control
     session_mode: SessionMode = Field(
-        default=SessionMode.CLI,
-        description="How to invoke Claude: 'cli' (direct CLI, uses subscription, more reliable) or 'sdk' (Agent SDK, uses API credits, Windows issues)"
+        default=SessionMode.SDK,
+        description="How to invoke Claude: 'cli' (direct CLI, uses subscription, more reliable) or 'sdk' (Agent SDK, uses API credits, better observability)"
     )
 
-    # Model settings - default to Sonnet for cost efficiency
+    # Model settings - default to Opus for maximum capability
     model: str = Field(
-        default="claude-sonnet-4-20250514",
+        default="claude-opus-4-5-20251101",
         description="Model to use. CLI mode supports any model, SDK may have restrictions."
     )
 

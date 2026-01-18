@@ -3,17 +3,24 @@
 Supports two modes:
 - CLI: Direct invocation of `claude` command (uses Claude subscription, reliable)
 - SDK: Claude Agent SDK (uses API credits, streaming but less reliable on Windows)
+
+Architecture:
+- BaseSession: Abstract base class with common session logic
+- CLISession: CLI-specific implementation
+- SDKSession: SDK-specific implementation
+- MockSession: For testing without SDK installed
+- create_session(): Factory function to create appropriate session type
 """
 
 import asyncio
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
 import uuid
+from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, Callable, Any, List
@@ -23,6 +30,10 @@ from pydantic import BaseModel
 from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory, UsageStats
 from .cost_tracker import CostTracker
 
+
+# =============================================================================
+# Input Prompt Detection (CLI mode)
+# =============================================================================
 
 # Patterns that indicate CLI is waiting for user input
 CLI_INPUT_PROMPTS = [
@@ -57,6 +68,10 @@ def detect_input_prompt(text: str) -> Optional[str]:
     return None
 
 
+# =============================================================================
+# Session Result Model
+# =============================================================================
+
 class SessionResult(BaseModel):
     """Result from a completed agent session."""
     session_id: str
@@ -77,6 +92,10 @@ class SessionResult(BaseModel):
     raw_output: Optional[str] = None
     raw_error: Optional[str] = None
 
+
+# =============================================================================
+# Error Classification
+# =============================================================================
 
 def classify_error(error_text: str) -> ErrorCategory:
     """Classify an error message to determine retry strategy.
@@ -152,10 +171,19 @@ def classify_error(error_text: str) -> ErrorCategory:
     return ErrorCategory.UNKNOWN
 
 
-class AgentSession:
-    """Manages a single agent session.
+# =============================================================================
+# Base Session Class (Abstract)
+# =============================================================================
 
-    Supports both CLI and SDK modes based on config.
+class BaseSession(ABC):
+    """Abstract base class for agent sessions.
+
+    Provides common functionality:
+    - Session state persistence
+    - Timeout handling
+    - Cost tracking setup
+
+    Subclasses implement the actual session execution logic.
     """
 
     def __init__(
@@ -189,6 +217,78 @@ class AgentSession:
         """Clear session state file."""
         if self._state_file.exists():
             self._state_file.unlink()
+
+    async def run(
+        self,
+        prompt: str,
+        on_message: Optional[Callable[[Any], None]] = None
+    ) -> SessionResult:
+        """Run an agent session with the given prompt.
+
+        Applies session timeout if configured, then delegates to
+        the subclass-specific _run_session implementation.
+        """
+        timeout = self.config.session_timeout_seconds
+        self._started_at = datetime.now()
+
+        try:
+            coro = self._run_session(prompt, on_message)
+
+            # Apply timeout if configured
+            if timeout > 0:
+                print(f"[SESSION] Timeout set: {timeout}s ({timeout // 60}m)")
+                result = await asyncio.wait_for(coro, timeout=timeout)
+            else:
+                result = await coro
+
+            # Add timing and model info
+            result.started_at = self._started_at
+            result.ended_at = datetime.now()
+            result.model = self.config.model
+
+            return result
+
+        except asyncio.TimeoutError:
+            print(f"\n[SESSION] Timeout after {timeout}s - forcing handoff")
+            return SessionResult(
+                session_id=self.session_id,
+                success=False,
+                context_usage_percent=self.context_usage_percent,
+                error_message=f"Session timeout after {timeout}s - forcing handoff",
+                error_category=ErrorCategory.TRANSIENT,
+                handoff_requested=True,
+                summary=f"Session timed out after {timeout // 60} minutes",
+                started_at=self._started_at,
+                ended_at=datetime.now(),
+                model=self.config.model
+            )
+
+    @abstractmethod
+    async def _run_session(
+        self,
+        prompt: str,
+        on_message: Optional[Callable[[Any], None]] = None
+    ) -> SessionResult:
+        """Execute the session - implemented by subclasses."""
+        pass
+
+
+# =============================================================================
+# CLI Session Implementation
+# =============================================================================
+
+class CLISession(BaseSession):
+    """Session implementation using direct CLI invocation.
+
+    Uses the user's Claude subscription, not API credits.
+    More reliable on Windows than the SDK.
+
+    Features:
+    - Streams output in real-time for visibility
+    - Detects permission prompts and input requests
+    - Per-chunk read timeout to detect stuck processes
+    - Graceful handling of blocking scenarios
+    """
 
     def _find_claude_executable(self) -> Optional[str]:
         """Find the claude CLI executable.
@@ -230,70 +330,12 @@ class AgentSession:
 
         return None
 
-    async def run(
+    async def _run_session(
         self,
         prompt: str,
         on_message: Optional[Callable[[Any], None]] = None
     ) -> SessionResult:
-        """Run an agent session with the given prompt.
-
-        Routes to CLI or SDK based on config.session_mode.
-        Applies session timeout if configured.
-        """
-        timeout = self.config.session_timeout_seconds
-        self._started_at = datetime.now()
-
-        try:
-            if self.config.session_mode == SessionMode.CLI:
-                coro = self._run_cli_session(prompt, on_message)
-            else:
-                coro = self._run_sdk_session(prompt, on_message)
-
-            # Apply timeout if configured
-            if timeout > 0:
-                print(f"[SESSION] Timeout set: {timeout}s ({timeout // 60}m)")
-                result = await asyncio.wait_for(coro, timeout=timeout)
-            else:
-                result = await coro
-
-            # Add timing and model info
-            result.started_at = self._started_at
-            result.ended_at = datetime.now()
-            result.model = self.config.model
-
-            return result
-
-        except asyncio.TimeoutError:
-            print(f"\n[SESSION] Timeout after {timeout}s - forcing handoff")
-            return SessionResult(
-                session_id=self.session_id,
-                success=False,
-                context_usage_percent=self.context_usage_percent,
-                error_message=f"Session timeout after {timeout}s - forcing handoff",
-                error_category=ErrorCategory.TRANSIENT,  # Treat as transient for retry logic
-                handoff_requested=True,  # Trigger handoff instead of failure
-                summary=f"Session timed out after {timeout // 60} minutes",
-                started_at=self._started_at,
-                ended_at=datetime.now(),
-                model=self.config.model
-            )
-
-    async def _run_cli_session(
-        self,
-        prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
-    ) -> SessionResult:
-        """Run session using direct CLI invocation with streaming output.
-
-        Uses the user's Claude subscription, not API credits.
-        More reliable on Windows than the SDK.
-
-        Features:
-        - Streams output in real-time for visibility
-        - Detects permission prompts and input requests
-        - Per-chunk read timeout to detect stuck processes
-        - Graceful handling of blocking scenarios
-        """
+        """Run session using direct CLI invocation with streaming output."""
         result = SessionResult(
             session_id=self.session_id,
             success=False,
@@ -307,9 +349,8 @@ class AgentSession:
             print(f"\n[ERROR] {result.error_message}")
             return result
 
-        # Per-chunk read timeout (seconds) - if no output for this long, assume stuck
+        # Per-chunk read timeout (seconds)
         read_timeout = self.config.cli_read_timeout_seconds
-
         session_timeout = self.config.session_timeout_seconds
 
         print(f"\n[CLI] Starting session with model: {self.config.model}")
@@ -327,7 +368,6 @@ class AgentSession:
             prompt_file.write_text(prompt, encoding='utf-8')
 
             # Build command using stdin for the prompt
-            # Use -p - to read from stdin, avoiding shell quoting issues entirely
             cmd_stdin = [
                 claude_path,
                 "--model", self.config.model,
@@ -368,79 +408,54 @@ class AgentSession:
             stderr_chunks: List[str] = []
             last_output_time = datetime.now()
             detected_prompt = None
-            recent_output = ""  # Buffer for prompt detection
+            recent_output = ""
 
             async def read_stream_with_timeout(stream, chunks: List[str], stream_name: str):
-                """Read from a stream with timeout detection.
-
-                Note: Claude CLI buffers output when stdout is a pipe, so we may not
-                see any output until the process completes. This is normal behavior.
-
-                We only terminate early if:
-                1. We detected a permission prompt AND
-                2. No output followed for read_timeout seconds
-
-                Otherwise, we let the session timeout (30 min default) handle it.
-                """
+                """Read from a stream with timeout detection."""
                 nonlocal last_output_time, detected_prompt, recent_output
                 timeout_warnings = 0
 
                 while True:
                     try:
-                        # Read with timeout
                         chunk = await asyncio.wait_for(
                             stream.read(4096),
                             timeout=read_timeout
                         )
 
                         if not chunk:
-                            # Stream ended
                             break
 
                         text = chunk.decode('utf-8', errors='replace')
                         chunks.append(text)
                         last_output_time = datetime.now()
-                        timeout_warnings = 0  # Reset warning counter on output
+                        timeout_warnings = 0
 
-                        # Print output in real-time
                         if stream_name == "stdout":
                             print(text, end='', flush=True)
 
-                            # Buffer recent output for prompt detection
                             recent_output += text
-                            # Keep only last 1000 chars for detection
                             if len(recent_output) > 1000:
                                 recent_output = recent_output[-1000:]
 
-                            # Check for input prompts
                             prompt_match = detect_input_prompt(recent_output)
                             if prompt_match and not detected_prompt:
                                 detected_prompt = prompt_match
                                 print(f"\n\n[CLI WARNING] Detected input prompt: '{prompt_match}'")
                                 print(f"[CLI WARNING] CLI may be waiting for user input!")
-                                # Don't break - let the timeout handle it
 
                     except asyncio.TimeoutError:
-                        # No output for read_timeout seconds
                         elapsed = (datetime.now() - last_output_time).total_seconds()
                         timeout_warnings += 1
 
-                        # Check if process is still running
                         if process.returncode is not None:
                             break
 
-                        # Only warn periodically (every 2 timeouts = 4 min by default)
                         if timeout_warnings % 2 == 1:
                             print(f"\n[CLI INFO] No output for {elapsed:.0f}s (CLI buffers output, this is normal)")
 
-                        # ONLY abort if we detected a permission prompt
-                        # This means the CLI is waiting for input
                         if detected_prompt:
                             print(f"[CLI ERROR] Process stuck on input prompt: '{detected_prompt}'")
                             return "stuck_on_prompt"
-
-                        # Otherwise, continue waiting - let session timeout handle it
-                        # The session timeout (default 30 min) is the primary safeguard
 
                 return "ok"
 
@@ -452,7 +467,6 @@ class AgentSession:
                 read_stream_with_timeout(process.stderr, stderr_chunks, "stderr")
             )
 
-            # Wait for both to complete
             stdout_status, stderr_status = await asyncio.gather(stdout_task, stderr_task)
 
             # Clean up temp file
@@ -479,17 +493,14 @@ class AgentSession:
                 result.raw_error = "".join(stderr_chunks)
                 return result
 
-            # Wait for process to complete
             await process.wait()
 
             stdout_text = "".join(stdout_chunks)
             stderr_text = "".join(stderr_chunks)
 
-            # Store raw output for debugging
             result.raw_output = stdout_text
             result.raw_error = stderr_text
 
-            # Debug: Show what we got back
             print(f"\n\n[CLI DEBUG] Return code: {process.returncode}")
             print(f"[CLI DEBUG] Stdout length: {len(stdout_text)} chars")
             print(f"[CLI DEBUG] Stderr length: {len(stderr_text)} chars")
@@ -498,7 +509,6 @@ class AgentSession:
             if not stdout_text and not stderr_text:
                 print(f"[CLI DEBUG] No output received from CLI!")
 
-            # Check for errors
             if process.returncode != 0:
                 error_text = stderr_text or stdout_text
                 result.error_category = classify_error(error_text)
@@ -519,7 +529,6 @@ class AgentSession:
                 result.summary = "Session completed successfully via CLI"
                 print(f"\n[CLI] Session completed successfully")
 
-                # Try to parse usage stats from CLI output
                 parsed_stats = CostTracker.parse_cli_output(stdout_text)
                 if parsed_stats:
                     if parsed_stats.input_tokens or parsed_stats.output_tokens:
@@ -544,20 +553,33 @@ class AgentSession:
 
         return result
 
-    async def _run_sdk_session(
+
+# =============================================================================
+# SDK Session Implementation
+# =============================================================================
+
+class SDKSession(BaseSession):
+    """Session implementation using Claude Agent SDK.
+
+    Note: Uses API credits, not Claude subscription.
+    Known to have reliability issues on Windows.
+
+    Features:
+    - Real-time streaming of agent messages
+    - Token usage tracking
+    - Context usage monitoring for handoff triggers
+    """
+
+    async def _run_session(
         self,
         prompt: str,
         on_message: Optional[Callable[[Any], None]] = None
     ) -> SessionResult:
-        """Run session using Claude Agent SDK.
-
-        Note: Uses API credits, not Claude subscription.
-        Known to have reliability issues on Windows.
-        """
+        """Run session using Claude Agent SDK."""
         try:
-            # Import SDK here to allow graceful failure if not installed
             from claude_agent_sdk import query, ClaudeAgentOptions
         except ImportError:
+            # Fall back to mock if SDK not installed
             return await self._run_mock_session(prompt, on_message)
 
         result = SessionResult(
@@ -566,10 +588,9 @@ class AgentSession:
             context_usage_percent=0.0
         )
 
-        # Track message processing
         message_count = 0
         received_result_message = False
-        all_messages = []  # Capture all messages for debugging
+        all_messages = []
         total_input_tokens = 0
         total_output_tokens = 0
 
@@ -593,24 +614,19 @@ class AgentSession:
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
 
-                # Capture message for debugging
                 msg_type = type(message).__name__
                 msg_text = getattr(message, 'text', None) or getattr(message, 'content', None) or str(message)
                 all_messages.append(f"[{msg_type}] {msg_text[:200] if msg_text else '(no text)'}")
 
-                # === VERBOSE LOGGING ===
                 timestamp = datetime.now().strftime("%H:%M:%S")
                 print(f"\n[{timestamp}] Message #{message_count}: {msg_type}")
 
-                # Show text content (truncated)
                 if msg_text and isinstance(msg_text, str):
                     display_text = msg_text[:300] + "..." if len(msg_text) > 300 else msg_text
-                    # Clean up for display
                     display_text = display_text.replace('\n', ' ').strip()
                     if display_text:
                         print(f"  Content: {display_text}")
 
-                # Show tool usage if present
                 if hasattr(message, 'tool_name'):
                     print(f"  Tool: {message.tool_name}")
                 if hasattr(message, 'tool_input'):
@@ -620,11 +636,9 @@ class AgentSession:
                     tool_result = str(message.tool_result)[:200]
                     print(f"  Result: {tool_result}...")
 
-                # Show any error info
                 if hasattr(message, 'is_error') and message.is_error:
                     print(f"  ERROR: {getattr(message, 'error', 'Unknown error')}")
 
-                # Track context usage from message metadata
                 if hasattr(message, 'usage'):
                     usage = message.usage
                     input_tokens = usage.get('input_tokens', 0)
@@ -636,23 +650,19 @@ class AgentSession:
                     result.context_usage_percent = self.context_usage_percent
                     print(f"  Tokens: {input_tokens} in / {output_tokens} out ({self.context_usage_percent:.1f}% context)")
 
-                # Check for handoff trigger
                 if self.context_usage_percent >= self.config.context_threshold_percent:
                     result.handoff_requested = True
                     print(f"  [!] Context threshold reached - handoff requested")
 
-                # Forward message to callback
                 if on_message:
                     on_message(message)
 
-                # Check for ResultMessage
                 if msg_type == 'ResultMessage':
                     received_result_message = True
                     is_error = getattr(message, 'is_error', False)
                     result.success = not is_error
                     if hasattr(message, 'text'):
                         result.summary = message.text
-                    # Check for error content in the result
                     if is_error and hasattr(message, 'text'):
                         result.error_message = message.text
                         print(f"\n[SDK ERROR] Agent returned error: {message.text}")
@@ -666,10 +676,8 @@ class AgentSession:
                         result.summary = message.text
                     print(f"\n[SDK] Final message received")
 
-            # Store message log for debugging
             result.raw_output = "\n".join(all_messages)
 
-            # Calculate and store usage stats
             if total_input_tokens or total_output_tokens:
                 cost = self._cost_tracker.calculate_cost(
                     input_tokens=total_input_tokens,
@@ -687,25 +695,18 @@ class AgentSession:
             print(f"[SDK] Session completed - processed {message_count} messages")
             print(f"{'='*60}\n")
 
-            # If we processed messages without error, consider it success
             if message_count > 0 and not result.error_message:
                 result.success = True
 
         except Exception as e:
             error_str = str(e)
-
-            # Store the raw error
             result.raw_error = error_str
-
-            # Classify the error for retry logic
             result.error_category = classify_error(error_str)
 
-            # Always log the full error for visibility
             print(f"\n[SDK ERROR] Exception during session:")
             print(f"[SDK ERROR] {error_str}")
             print(f"[SDK ERROR] Category: {result.error_category.value}")
 
-            # Display category-specific messages
             if result.error_category == ErrorCategory.BILLING:
                 print(f"\n{'='*60}")
                 print("[BILLING ERROR] Credit balance is too low!")
@@ -722,7 +723,6 @@ class AgentSession:
                 print(f"\n[AUTH ERROR] Authentication failed")
                 result.error_message = f"Auth Error: {error_str}"
             elif result.error_category == ErrorCategory.SDK_CRASH:
-                # Windows SDK bug - but now we have more context
                 print(f"\n[SDK] Exit code 1 encountered")
                 print(f"[SDK] Messages received before error: {message_count}")
                 if all_messages:
@@ -740,7 +740,6 @@ class AgentSession:
 
             result.success = False
 
-            # Print full traceback for debugging
             import traceback
             print("\n[SDK] Full traceback:")
             traceback.print_exc()
@@ -754,8 +753,6 @@ class AgentSession:
     ) -> SessionResult:
         """Mock session for development without the SDK installed."""
         print(f"\n[MOCK SESSION] Would run agent with prompt:\n{prompt[:500]}...")
-
-        # Simulate some work
         await asyncio.sleep(1)
 
         return SessionResult(
@@ -766,6 +763,91 @@ class AgentSession:
             files_changed=[]
         )
 
+
+# =============================================================================
+# Mock Session (for testing)
+# =============================================================================
+
+class MockSession(BaseSession):
+    """Mock session for testing without any external dependencies."""
+
+    async def _run_session(
+        self,
+        prompt: str,
+        on_message: Optional[Callable[[Any], None]] = None
+    ) -> SessionResult:
+        """Run a mock session that simulates success."""
+        print(f"\n[MOCK SESSION] Simulating session with prompt ({len(prompt)} chars)")
+        await asyncio.sleep(0.5)
+
+        return SessionResult(
+            session_id=self.session_id,
+            success=True,
+            context_usage_percent=25.0,
+            summary="[MOCK] Session completed successfully",
+            files_changed=[]
+        )
+
+
+# =============================================================================
+# Factory Function
+# =============================================================================
+
+def create_session(
+    config: HarnessConfig,
+    project_path: Path,
+    session_id: Optional[str] = None
+) -> BaseSession:
+    """Factory function to create the appropriate session type.
+
+    Args:
+        config: Harness configuration with session_mode setting
+        project_path: Path to the project directory
+        session_id: Optional session identifier
+
+    Returns:
+        Appropriate session instance (CLISession or SDKSession)
+    """
+    if config.session_mode == SessionMode.CLI:
+        return CLISession(config, project_path, session_id)
+    else:
+        return SDKSession(config, project_path, session_id)
+
+
+# =============================================================================
+# Legacy AgentSession (Facade for backward compatibility)
+# =============================================================================
+
+class AgentSession(BaseSession):
+    """Agent session that delegates to CLI or SDK based on config.
+
+    This class maintains backward compatibility with existing code
+    while using the new separated implementations internally.
+
+    Note: New code should use create_session() factory instead.
+    """
+
+    async def _run_session(
+        self,
+        prompt: str,
+        on_message: Optional[Callable[[Any], None]] = None
+    ) -> SessionResult:
+        """Route to CLI or SDK implementation based on config."""
+        if self.config.session_mode == SessionMode.CLI:
+            cli_session = CLISession(self.config, self.project_path, self.session_id)
+            cli_session._started_at = self._started_at
+            cli_session.context_usage_percent = self.context_usage_percent
+            return await cli_session._run_session(prompt, on_message)
+        else:
+            sdk_session = SDKSession(self.config, self.project_path, self.session_id)
+            sdk_session._started_at = self._started_at
+            sdk_session.context_usage_percent = self.context_usage_percent
+            return await sdk_session._run_session(prompt, on_message)
+
+
+# =============================================================================
+# Session Manager
+# =============================================================================
 
 class SessionManager:
     """Manages session lifecycle across the harness.
@@ -779,14 +861,14 @@ class SessionManager:
     def __init__(self, config: HarnessConfig, project_path: Path):
         self.config = config
         self.project_path = Path(project_path)
-        self.current_session: Optional[AgentSession] = None
+        self.current_session: Optional[BaseSession] = None
         self.session_count = 0
 
-    def create_session(self) -> AgentSession:
-        """Create a new agent session."""
+    def create_session(self) -> BaseSession:
+        """Create a new agent session using the appropriate implementation."""
         self.session_count += 1
         session_id = f"s{self.session_count:03d}_{datetime.now().strftime('%H%M%S')}"
-        self.current_session = AgentSession(
+        self.current_session = create_session(
             config=self.config,
             project_path=self.project_path,
             session_id=session_id
@@ -801,8 +883,9 @@ class SessionManager:
 
     def get_recovery_state(self) -> Optional[SessionState]:
         """Get state from a previous interrupted session."""
-        session = AgentSession(
+        # Use a temporary session just to read state
+        temp_session = CLISession(
             config=self.config,
             project_path=self.project_path
         )
-        return session.load_state()
+        return temp_session.load_state()
