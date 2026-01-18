@@ -167,10 +167,10 @@ class HarnessConfig(BaseModel):
         description="Trigger handoff when context reaches this percentage"
     )
 
-    # Session mode
+    # Session mode - CLI is default because SDK has reliability issues on Windows
     session_mode: SessionMode = Field(
-        default=SessionMode.SDK,
-        description="How to invoke Claude: 'cli' (direct CLI, uses subscription) or 'sdk' (Agent SDK, uses API credits)"
+        default=SessionMode.CLI,
+        description="How to invoke Claude: 'cli' (direct CLI, uses subscription, more reliable) or 'sdk' (Agent SDK, uses API credits, Windows issues)"
     )
 
     # Model settings - different defaults for CLI vs SDK

@@ -24,8 +24,8 @@ def main():
 
 @main.command()
 @click.argument('project_path', type=click.Path(exists=True))
-@click.option('--mode', type=click.Choice(['cli', 'sdk']), default='sdk',
-              help='Session mode: cli (uses subscription, reliable) or sdk (uses API credits)')
+@click.option('--mode', type=click.Choice(['cli', 'sdk']), default='cli',
+              help='Session mode: cli (uses subscription, reliable) or sdk (uses API credits, Windows issues)')
 @click.option('--model', default='claude-opus-4-5-20251101', help='Claude model to use')
 @click.option('--threshold', default=70.0, help='Context threshold percentage for handoff')
 @click.option('--max-sessions', type=int, help='Maximum sessions before stopping')
@@ -47,18 +47,18 @@ def run(
     Two modes are available:
 
     \b
-    --mode cli (default):
+    --mode cli (default, recommended):
       - Uses the Claude CLI directly
       - Billed to your Claude subscription (Pro/Max)
       - More reliable on Windows
-      - No streaming, waits for completion
+      - Shows full output when complete
 
     \b
     --mode sdk:
       - Uses the Claude Agent SDK
       - Billed to Anthropic API credits (separate from subscription)
-      - Streaming output
-      - Known reliability issues on Windows
+      - Streaming output with verbose logging
+      - Known reliability issues on Windows (exit code 1 bug)
     """
     session_mode = SessionMode.CLI if mode == 'cli' else SessionMode.SDK
 
