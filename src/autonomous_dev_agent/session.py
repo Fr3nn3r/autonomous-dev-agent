@@ -310,10 +310,13 @@ class AgentSession:
         # Per-chunk read timeout (seconds) - if no output for this long, assume stuck
         read_timeout = self.config.cli_read_timeout_seconds
 
+        session_timeout = self.config.session_timeout_seconds
+
         print(f"\n[CLI] Starting session with model: {self.config.model}")
         print(f"[CLI] Working directory: {self.project_path}")
         print(f"[CLI] Max turns: {self.config.cli_max_turns}")
-        print(f"[CLI] Read timeout: {read_timeout}s (per-chunk)")
+        print(f"[CLI] Session timeout: {session_timeout}s ({session_timeout // 60}m)")
+        print(f"[CLI] Note: CLI buffers output - no streaming until complete")
         print(f"[CLI] Using executable: {claude_path}")
         print(f"[CLI] Prompt length: {len(prompt)} chars")
 
@@ -368,8 +371,19 @@ class AgentSession:
             recent_output = ""  # Buffer for prompt detection
 
             async def read_stream_with_timeout(stream, chunks: List[str], stream_name: str):
-                """Read from a stream with timeout detection."""
+                """Read from a stream with timeout detection.
+
+                Note: Claude CLI buffers output when stdout is a pipe, so we may not
+                see any output until the process completes. This is normal behavior.
+
+                We only terminate early if:
+                1. We detected a permission prompt AND
+                2. No output followed for read_timeout seconds
+
+                Otherwise, we let the session timeout (30 min default) handle it.
+                """
                 nonlocal last_output_time, detected_prompt, recent_output
+                timeout_warnings = 0
 
                 while True:
                     try:
@@ -386,6 +400,7 @@ class AgentSession:
                         text = chunk.decode('utf-8', errors='replace')
                         chunks.append(text)
                         last_output_time = datetime.now()
+                        timeout_warnings = 0  # Reset warning counter on output
 
                         # Print output in real-time
                         if stream_name == "stdout":
@@ -408,22 +423,24 @@ class AgentSession:
                     except asyncio.TimeoutError:
                         # No output for read_timeout seconds
                         elapsed = (datetime.now() - last_output_time).total_seconds()
-                        print(f"\n[CLI WARNING] No output for {elapsed:.0f}s")
+                        timeout_warnings += 1
 
                         # Check if process is still running
                         if process.returncode is not None:
                             break
 
-                        # If we detected a prompt earlier, this confirms we're stuck
+                        # Only warn periodically (every 2 timeouts = 4 min by default)
+                        if timeout_warnings % 2 == 1:
+                            print(f"\n[CLI INFO] No output for {elapsed:.0f}s (CLI buffers output, this is normal)")
+
+                        # ONLY abort if we detected a permission prompt
+                        # This means the CLI is waiting for input
                         if detected_prompt:
-                            print(f"[CLI ERROR] Process appears stuck on input prompt: '{detected_prompt}'")
+                            print(f"[CLI ERROR] Process stuck on input prompt: '{detected_prompt}'")
                             return "stuck_on_prompt"
 
-                        # If no prompt detected but still no output, might be processing
-                        # Give it more time up to 3x read_timeout total
-                        if elapsed > read_timeout * 3:
-                            print(f"[CLI ERROR] Process unresponsive for {elapsed:.0f}s, may be stuck")
-                            return "unresponsive"
+                        # Otherwise, continue waiting - let session timeout handle it
+                        # The session timeout (default 30 min) is the primary safeguard
 
                 return "ok"
 
@@ -444,9 +461,9 @@ class AgentSession:
             except:
                 pass
 
-            # Check if we got stuck
-            if stdout_status in ("stuck_on_prompt", "unresponsive"):
-                print(f"\n[CLI] Terminating stuck process...")
+            # Check if we got stuck on a permission prompt
+            if stdout_status == "stuck_on_prompt":
+                print(f"\n[CLI] Terminating process stuck on permission prompt...")
                 try:
                     process.terminate()
                     await asyncio.wait_for(process.wait(), timeout=5)
@@ -455,9 +472,7 @@ class AgentSession:
                     process.kill()
                     await process.wait()
 
-                result.error_message = f"CLI process stuck: {stdout_status}"
-                if detected_prompt:
-                    result.error_message += f" (detected prompt: '{detected_prompt}')"
+                result.error_message = f"CLI stuck waiting for input: '{detected_prompt}'"
                 result.error_category = ErrorCategory.TRANSIENT
                 result.success = False
                 result.raw_output = "".join(stdout_chunks)
