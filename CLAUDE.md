@@ -49,12 +49,14 @@ pip install -e ".[dev]"             # With dev dependencies
 
 # CLI (after install)
 ada init <path>                     # Initialize new project
+ada init <path> --spec spec.md      # Initialize with AI-generated features
 ada run <path>                      # Execute agent harness
 ada run <path> --model claude-sonnet-4-20250514 --threshold 70
 ada add-feature <path>              # Add task to backlog
 ada status <path>                   # Show backlog with colors
 ada progress <path>                 # Display recent progress logs
 ada import-backlog <path> <md>      # Convert markdown tasks to JSON
+ada generate-backlog <spec>         # Generate features from spec file
 
 # Tests
 pytest tests/                       # Full suite
@@ -103,9 +105,31 @@ pytest -k "backlog" --tb=short      # By keyword
 
 ## Key Paths
 - Core: `src/autonomous_dev_agent/` (harness.py, session.py, models.py)
-- Prompts: `src/autonomous_dev_agent/prompts/` (initializer.txt, coding.txt, handoff.txt)
+- Prompts: `src/autonomous_dev_agent/prompts/` (*.md files)
+- Generation: `src/autonomous_dev_agent/generation/` (AI-driven backlog generation)
 - Tests: `tests/` (test_models.py)
 - Docs: `docs/` (DESIGN.md, SOURCES.md)
+
+## Prompt System
+
+Prompts are stored as `.md` files in `src/autonomous_dev_agent/prompts/` for editor syntax highlighting. Each serves a distinct purpose in the workflow:
+
+| Prompt | Purpose | When Used |
+|--------|---------|-----------|
+| `initializer.md` | Sets up project workspace (git, init.sh, initial commit) | First `ada run` on new project |
+| `coding.md` | Main development prompt for implementing features | Each coding session |
+| `handoff.md` | Context transfer between sessions at threshold | When context reaches 70% |
+| `generate_backlog.md` | One-shot Claude call to generate features from spec | `ada generate-backlog` or `ada init --spec` |
+| `discovery_review.md` | AI code review for bugs/security issues | `ada discover` command |
+| `discovery_requirements.md` | Extract requirements from documentation | `ada discover` command |
+
+**Workflow sequence:**
+1. **(Optional)** Generate backlog from spec → `generate_backlog.md`
+2. Initialize workspace → `initializer.md`
+3. Implement features → `coding.md` (loops)
+4. At context threshold → `handoff.md` → back to step 3
+
+**Custom prompts**: Place in `.ada/prompts/{name}.md` to override package defaults.
 
 ## Configuration
 
@@ -118,5 +142,3 @@ backlog_file: str = "feature-list.json"
 auto_commit: bool = True
 run_tests_before_commit: bool = True
 ```
-
-**Custom prompts**: Place in `.ada/prompts/{initializer,coding,handoff}.txt` to override defaults.
