@@ -8,7 +8,6 @@ Tests cover:
 - MockSession implementation
 - create_session factory function
 - SessionManager class
-- AgentSession backward compatibility
 """
 
 import asyncio
@@ -28,7 +27,6 @@ from autonomous_dev_agent.session import (
     SDKSession,
     MockSession,
     create_session,
-    AgentSession,
     SessionManager,
     CLI_INPUT_PROMPTS,
 )
@@ -420,67 +418,6 @@ class TestCreateSessionFactory:
 
 
 # =============================================================================
-# Tests for AgentSession (backward compatibility)
-# =============================================================================
-
-class TestAgentSession:
-    """Tests for AgentSession backward compatibility facade."""
-
-    def test_initialization(self, tmp_path):
-        """Should initialize like original AgentSession."""
-        config = HarnessConfig()
-        session = AgentSession(config, tmp_path, "agent-test")
-
-        assert session.config == config
-        assert session.project_path == tmp_path
-        assert session.session_id == "agent-test"
-
-    @pytest.mark.asyncio
-    async def test_routes_to_cli_session(self, tmp_path):
-        """Should route to CLISession when mode is CLI."""
-        config = HarnessConfig(session_mode=SessionMode.CLI)
-        session = AgentSession(config, tmp_path)
-
-        with patch.object(CLISession, '_run_session', new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = SessionResult(
-                session_id="test",
-                success=True,
-                context_usage_percent=0.0
-            )
-
-            result = await session._run_session("test prompt")
-            mock_run.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_routes_to_sdk_session(self, tmp_path):
-        """Should route to SDKSession when mode is SDK."""
-        config = HarnessConfig(session_mode=SessionMode.SDK)
-        session = AgentSession(config, tmp_path)
-
-        with patch.object(SDKSession, '_run_session', new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = SessionResult(
-                session_id="test",
-                success=True,
-                context_usage_percent=0.0
-            )
-
-            result = await session._run_session("test prompt")
-            mock_run.assert_called_once()
-
-    def test_state_management_works(self, tmp_path):
-        """Should support state management like original."""
-        config = HarnessConfig()
-        session = AgentSession(config, tmp_path)
-
-        state = SessionState(session_id="test", context_usage_percent=50.0)
-        session.save_state(state)
-
-        loaded = session.load_state()
-        assert loaded is not None
-        assert loaded.session_id == "test"
-
-
-# =============================================================================
 # Tests for SessionManager
 # =============================================================================
 
@@ -643,10 +580,8 @@ class TestSessionIntegration:
         cli = CLISession(config, tmp_path)
         sdk = SDKSession(config, tmp_path)
         mock = MockSession(config, tmp_path)
-        agent = AgentSession(config, tmp_path)
 
         # All should use the same state file
         assert cli._state_file == sdk._state_file
         assert sdk._state_file == mock._state_file
-        assert mock._state_file == agent._state_file
         assert cli._state_file == tmp_path / ".ada_session_state.json"

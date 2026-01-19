@@ -189,7 +189,7 @@ class TestRetryLogicHelpers:
     def test_calculate_retry_delay_first_attempt(self, harness_mock):
         """First retry should use base delay."""
         config = RetryConfig(base_delay_seconds=5.0, jitter_factor=0.0)
-        delay = harness_mock._calculate_retry_delay(0, config)
+        delay = harness_mock._orchestrator._calculate_retry_delay(0, config)
         assert delay == 5.0
 
     def test_calculate_retry_delay_exponential(self, harness_mock):
@@ -200,11 +200,11 @@ class TestRetryLogicHelpers:
             jitter_factor=0.0
         )
         # attempt 0: 5 * 2^0 = 5
-        assert harness_mock._calculate_retry_delay(0, config) == 5.0
+        assert harness_mock._orchestrator._calculate_retry_delay(0, config) == 5.0
         # attempt 1: 5 * 2^1 = 10
-        assert harness_mock._calculate_retry_delay(1, config) == 10.0
+        assert harness_mock._orchestrator._calculate_retry_delay(1, config) == 10.0
         # attempt 2: 5 * 2^2 = 20
-        assert harness_mock._calculate_retry_delay(2, config) == 20.0
+        assert harness_mock._orchestrator._calculate_retry_delay(2, config) == 20.0
 
     def test_calculate_retry_delay_capped(self, harness_mock):
         """Delay should be capped at max_delay_seconds."""
@@ -215,7 +215,7 @@ class TestRetryLogicHelpers:
             jitter_factor=0.0
         )
         # attempt 2: 100 * 2^2 = 400, capped to 150
-        delay = harness_mock._calculate_retry_delay(2, config)
+        delay = harness_mock._orchestrator._calculate_retry_delay(2, config)
         assert delay == 150.0
 
     def test_should_retry_on_transient_error(self, harness_mock):
@@ -226,7 +226,7 @@ class TestRetryLogicHelpers:
             context_usage_percent=50.0,
             error_category=ErrorCategory.TRANSIENT
         )
-        assert harness_mock._should_retry(result, 0, harness_mock.config.retry) is True
+        assert harness_mock._orchestrator._should_retry(result, 0, harness_mock.config.retry) is True
 
     def test_should_retry_on_rate_limit(self, harness_mock):
         """Should retry on rate limit errors."""
@@ -236,7 +236,7 @@ class TestRetryLogicHelpers:
             context_usage_percent=50.0,
             error_category=ErrorCategory.RATE_LIMIT
         )
-        assert harness_mock._should_retry(result, 0, harness_mock.config.retry) is True
+        assert harness_mock._orchestrator._should_retry(result, 0, harness_mock.config.retry) is True
 
     def test_should_not_retry_on_billing_error(self, harness_mock):
         """Should not retry on billing errors."""
@@ -246,7 +246,7 @@ class TestRetryLogicHelpers:
             context_usage_percent=50.0,
             error_category=ErrorCategory.BILLING
         )
-        assert harness_mock._should_retry(result, 0, harness_mock.config.retry) is False
+        assert harness_mock._orchestrator._should_retry(result, 0, harness_mock.config.retry) is False
 
     def test_should_not_retry_on_auth_error(self, harness_mock):
         """Should not retry on auth errors."""
@@ -256,7 +256,7 @@ class TestRetryLogicHelpers:
             context_usage_percent=50.0,
             error_category=ErrorCategory.AUTH
         )
-        assert harness_mock._should_retry(result, 0, harness_mock.config.retry) is False
+        assert harness_mock._orchestrator._should_retry(result, 0, harness_mock.config.retry) is False
 
     def test_should_not_retry_after_max_attempts(self, harness_mock):
         """Should not retry after max attempts."""
@@ -267,7 +267,7 @@ class TestRetryLogicHelpers:
             error_category=ErrorCategory.TRANSIENT
         )
         # At attempt 3 with max_retries=3, should not retry
-        assert harness_mock._should_retry(result, 3, harness_mock.config.retry) is False
+        assert harness_mock._orchestrator._should_retry(result, 3, harness_mock.config.retry) is False
 
     def test_should_not_retry_on_success(self, harness_mock):
         """Should not retry successful sessions."""
@@ -276,7 +276,7 @@ class TestRetryLogicHelpers:
             success=True,
             context_usage_percent=50.0
         )
-        assert harness_mock._should_retry(result, 0, harness_mock.config.retry) is False
+        assert harness_mock._orchestrator._should_retry(result, 0, harness_mock.config.retry) is False
 
     def test_should_not_retry_on_handoff(self, harness_mock):
         """Should not retry when handoff is requested."""
@@ -286,7 +286,7 @@ class TestRetryLogicHelpers:
             context_usage_percent=70.0,
             handoff_requested=True
         )
-        assert harness_mock._should_retry(result, 0, harness_mock.config.retry) is False
+        assert harness_mock._orchestrator._should_retry(result, 0, harness_mock.config.retry) is False
 
     def test_should_retry_unknown_error_once(self, harness_mock):
         """Should retry unknown errors once."""
@@ -297,6 +297,6 @@ class TestRetryLogicHelpers:
             error_category=ErrorCategory.UNKNOWN
         )
         # First attempt should retry
-        assert harness_mock._should_retry(result, 0, harness_mock.config.retry) is True
+        assert harness_mock._orchestrator._should_retry(result, 0, harness_mock.config.retry) is True
         # Second attempt should not retry
-        assert harness_mock._should_retry(result, 1, harness_mock.config.retry) is False
+        assert harness_mock._orchestrator._should_retry(result, 1, harness_mock.config.retry) is False

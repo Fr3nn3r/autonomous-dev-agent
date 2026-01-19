@@ -884,37 +884,6 @@ def create_session(
 
 
 # =============================================================================
-# Legacy AgentSession (Facade for backward compatibility)
-# =============================================================================
-
-class AgentSession(BaseSession):
-    """Agent session that delegates to CLI or SDK based on config.
-
-    This class maintains backward compatibility with existing code
-    while using the new separated implementations internally.
-
-    Note: New code should use create_session() factory instead.
-    """
-
-    async def _run_session(
-        self,
-        prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
-    ) -> SessionResult:
-        """Route to CLI or SDK implementation based on config."""
-        if self.config.session_mode == SessionMode.CLI:
-            cli_session = CLISession(self.config, self.project_path, self.session_id)
-            cli_session._started_at = self._started_at
-            cli_session.context_usage_percent = self.context_usage_percent
-            return await cli_session._run_session(prompt, on_message)
-        else:
-            sdk_session = SDKSession(self.config, self.project_path, self.session_id)
-            sdk_session._started_at = self._started_at
-            sdk_session.context_usage_percent = self.context_usage_percent
-            return await sdk_session._run_session(prompt, on_message)
-
-
-# =============================================================================
 # Session Manager
 # =============================================================================
 

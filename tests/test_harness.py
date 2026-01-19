@@ -122,7 +122,7 @@ class TestHarnessInitialization:
         assert harness.backlog is None  # Not loaded yet
         assert harness.initialized is False
         assert harness.total_sessions == 0
-        assert harness._shutdown_requested is False
+        assert not harness._recovery_manager.is_shutdown_requested()
 
     def test_init_with_custom_config(self, project_with_backlog):
         """Should initialize with custom config."""
@@ -161,7 +161,10 @@ class TestHarnessInitialization:
 # =============================================================================
 
 class TestRetryLogic:
-    """Tests for retry delay calculation and retry decisions."""
+    """Tests for retry delay calculation and retry decisions.
+
+    Note: These methods are now on the SessionOrchestrator component.
+    """
 
     def test_calculate_retry_delay_first_attempt(self, harness):
         """First retry should use base delay."""
@@ -171,7 +174,7 @@ class TestRetryLogic:
             jitter_factor=0.0  # No jitter for predictable tests
         )
 
-        delay = harness._calculate_retry_delay(0, config)
+        delay = harness._orchestrator._calculate_retry_delay(0, config)
         assert delay == 5.0
 
     def test_calculate_retry_delay_exponential(self, harness):
@@ -182,9 +185,9 @@ class TestRetryLogic:
             jitter_factor=0.0
         )
 
-        delay_0 = harness._calculate_retry_delay(0, config)
-        delay_1 = harness._calculate_retry_delay(1, config)
-        delay_2 = harness._calculate_retry_delay(2, config)
+        delay_0 = harness._orchestrator._calculate_retry_delay(0, config)
+        delay_1 = harness._orchestrator._calculate_retry_delay(1, config)
+        delay_2 = harness._orchestrator._calculate_retry_delay(2, config)
 
         assert delay_0 == 5.0
         assert delay_1 == 10.0
@@ -200,7 +203,7 @@ class TestRetryLogic:
         )
 
         # Attempt 3 would be 5 * 2^3 = 40, but should cap at 15
-        delay = harness._calculate_retry_delay(3, config)
+        delay = harness._orchestrator._calculate_retry_delay(3, config)
         assert delay == 15.0
 
     def test_calculate_retry_delay_with_jitter(self, harness):
@@ -211,7 +214,7 @@ class TestRetryLogic:
             jitter_factor=0.5  # +/- 50%
         )
 
-        delays = [harness._calculate_retry_delay(0, config) for _ in range(10)]
+        delays = [harness._orchestrator._calculate_retry_delay(0, config) for _ in range(10)]
 
         # All should be within jitter range
         for d in delays:
@@ -230,10 +233,10 @@ class TestRetryLogic:
             error_category=ErrorCategory.TRANSIENT
         )
 
-        assert harness._should_retry(result, 0, config) is True
-        assert harness._should_retry(result, 1, config) is True
-        assert harness._should_retry(result, 2, config) is True
-        assert harness._should_retry(result, 3, config) is False  # Exhausted
+        assert harness._orchestrator._should_retry(result, 0, config) is True
+        assert harness._orchestrator._should_retry(result, 1, config) is True
+        assert harness._orchestrator._should_retry(result, 2, config) is True
+        assert harness._orchestrator._should_retry(result, 3, config) is False  # Exhausted
 
     def test_should_retry_on_rate_limit(self, harness):
         """Should retry on rate limit errors."""
@@ -245,7 +248,7 @@ class TestRetryLogic:
             error_category=ErrorCategory.RATE_LIMIT
         )
 
-        assert harness._should_retry(result, 0, config) is True
+        assert harness._orchestrator._should_retry(result, 0, config) is True
 
     def test_should_not_retry_on_billing_error(self, harness):
         """Should not retry on billing errors."""
@@ -257,7 +260,7 @@ class TestRetryLogic:
             error_category=ErrorCategory.BILLING
         )
 
-        assert harness._should_retry(result, 0, config) is False
+        assert harness._orchestrator._should_retry(result, 0, config) is False
 
     def test_should_not_retry_on_auth_error(self, harness):
         """Should not retry on auth errors."""
@@ -269,7 +272,7 @@ class TestRetryLogic:
             error_category=ErrorCategory.AUTH
         )
 
-        assert harness._should_retry(result, 0, config) is False
+        assert harness._orchestrator._should_retry(result, 0, config) is False
 
     def test_should_not_retry_success(self, harness):
         """Should not retry successful sessions."""
@@ -280,7 +283,7 @@ class TestRetryLogic:
             context_usage_percent=0.0
         )
 
-        assert harness._should_retry(result, 0, config) is False
+        assert harness._orchestrator._should_retry(result, 0, config) is False
 
     def test_should_not_retry_handoff(self, harness):
         """Should not retry handoff requests."""
@@ -292,7 +295,7 @@ class TestRetryLogic:
             handoff_requested=True
         )
 
-        assert harness._should_retry(result, 0, config) is False
+        assert harness._orchestrator._should_retry(result, 0, config) is False
 
     def test_should_retry_unknown_once(self, harness):
         """Should retry unknown errors once."""
@@ -304,8 +307,8 @@ class TestRetryLogic:
             error_category=ErrorCategory.UNKNOWN
         )
 
-        assert harness._should_retry(result, 0, config) is True
-        assert harness._should_retry(result, 1, config) is False
+        assert harness._orchestrator._should_retry(result, 0, config) is True
+        assert harness._orchestrator._should_retry(result, 1, config) is False
 
 
 # =============================================================================
@@ -367,12 +370,15 @@ class TestBacklogManagement:
 # =============================================================================
 
 class TestPromptTemplateLoading:
-    """Tests for prompt template loading."""
+    """Tests for prompt template loading.
+
+    Note: Prompt loading is now on the SessionOrchestrator component.
+    """
 
     def test_load_package_prompt(self, harness):
         """Should load prompt from package directory."""
         # The package should have default prompts
-        template = harness._load_prompt_template("coding")
+        template = harness._orchestrator._load_prompt_template("coding")
 
         assert template is not None
         assert len(template) > 0
@@ -387,13 +393,13 @@ class TestPromptTemplateLoading:
         custom_template = "Custom template for {feature_name}"
         (local_prompts / "coding.md").write_text(custom_template)
 
-        template = harness._load_prompt_template("coding")
+        template = harness._orchestrator._load_prompt_template("coding")
         assert template == custom_template
 
     def test_load_prompt_not_found(self, harness):
         """Should raise error for missing prompt."""
         with pytest.raises(FileNotFoundError):
-            harness._load_prompt_template("nonexistent_prompt")
+            harness._orchestrator._load_prompt_template("nonexistent_prompt")
 
 
 # =============================================================================
@@ -401,7 +407,10 @@ class TestPromptTemplateLoading:
 # =============================================================================
 
 class TestFormattingHelpers:
-    """Tests for prompt formatting helper methods."""
+    """Tests for prompt formatting helper methods.
+
+    Note: Formatting methods are now on the SessionOrchestrator component.
+    """
 
     def test_format_acceptance_criteria(self, harness):
         """Should format acceptance criteria as checklist."""
@@ -412,7 +421,7 @@ class TestFormattingHelpers:
             acceptance_criteria=["Criterion 1", "Criterion 2", "Criterion 3"]
         )
 
-        result = harness._format_acceptance_criteria(feature)
+        result = harness._orchestrator._format_acceptance_criteria(feature)
 
         assert "- [ ] Criterion 1" in result
         assert "- [ ] Criterion 2" in result
@@ -427,23 +436,18 @@ class TestFormattingHelpers:
             acceptance_criteria=[]
         )
 
-        result = harness._format_acceptance_criteria(feature)
+        result = harness._orchestrator._format_acceptance_criteria(feature)
         assert "No specific criteria" in result
 
     def test_format_feature_summary(self, harness):
         """Should format feature summary for initializer."""
         harness.load_backlog()
 
-        summary = harness._format_feature_summary()
+        summary = harness._orchestrator._format_feature_summary(harness.backlog)
 
         assert "Feature One" in summary
         assert "Feature Two" in summary
         assert "functional" in summary.lower()
-
-    def test_format_feature_summary_no_backlog(self, harness):
-        """Should return message when no backlog loaded."""
-        summary = harness._format_feature_summary()
-        assert "No features loaded" in summary
 
 
 # =============================================================================
@@ -507,14 +511,17 @@ class TestHealthChecks:
 # =============================================================================
 
 class TestTestRunning:
-    """Tests for test command execution."""
+    """Tests for test command execution.
+
+    Note: Test running is now on the FeatureCompletionHandler component.
+    """
 
     @pytest.mark.asyncio
     async def test_run_tests_no_command(self, harness):
         """Should pass when no test command configured."""
         harness.config.test_command = None
 
-        success, message = await harness._run_tests()
+        success, message = await harness._completion_handler.run_tests()
 
         assert success is True
         assert "No test command" in message
@@ -524,7 +531,7 @@ class TestTestRunning:
         """Should report success when tests pass."""
         harness.config.test_command = "python -c 'exit(0)'"
 
-        success, message = await harness._run_tests()
+        success, message = await harness._completion_handler.run_tests()
 
         assert success is True
         assert "passed" in message.lower()
@@ -535,7 +542,7 @@ class TestTestRunning:
         # Use Windows-compatible command
         harness.config.test_command = 'python -c "import sys; sys.exit(1)"'
 
-        success, message = await harness._run_tests()
+        success, message = await harness._completion_handler.run_tests()
 
         assert success is False
         assert "failed" in message.lower()
@@ -546,7 +553,10 @@ class TestTestRunning:
 # =============================================================================
 
 class TestSessionStateManagement:
-    """Tests for session state save/recovery."""
+    """Tests for session state save/recovery.
+
+    Note: State management is now on the SessionRecoveryManager component.
+    """
 
     def test_save_session_state(self, harness):
         """Should save session state to file."""
@@ -557,13 +567,11 @@ class TestSessionStateManagement:
         with patch.object(harness.git, 'get_status') as mock_status:
             mock_status.return_value = Mock(last_commit_hash="abc123")
 
-            harness._save_session_state(session, feature, context_percent=50.0)
+            harness._recovery_manager.save_session_state(session, feature, context_percent=50.0)
 
-        # Verify state was saved (new location is .ada/state/session.json)
-        state_file = harness.project_path / ".ada" / "state" / "session.json"
-        assert state_file.exists()
-
-        state = SessionState.model_validate_json(state_file.read_text())
+        # Verify state was saved
+        state = session.load_state()
+        assert state is not None
         assert state.session_id == session.session_id
         assert state.current_feature_id == feature.id
         assert state.context_usage_percent == 50.0
@@ -571,7 +579,7 @@ class TestSessionStateManagement:
     @pytest.mark.asyncio
     async def test_check_for_recovery_no_state(self, harness):
         """Should return None when no recovery state."""
-        result = await harness._check_for_recovery()
+        result = await harness._recovery_manager.check_for_recovery()
         assert result is None
 
     @pytest.mark.asyncio
@@ -588,7 +596,7 @@ class TestSessionStateManagement:
         state_file = harness.project_path / ".ada_session_state.json"
         state_file.write_text(state.model_dump_json())
 
-        result = await harness._check_for_recovery()
+        result = await harness._recovery_manager.check_for_recovery()
         assert result == "feature-1"
 
 
@@ -597,7 +605,10 @@ class TestSessionStateManagement:
 # =============================================================================
 
 class TestSessionRecording:
-    """Tests for session history recording."""
+    """Tests for session history recording.
+
+    Note: Session recording is now on the FeatureCompletionHandler component.
+    """
 
     def test_record_session_success(self, harness):
         """Should record successful session to history."""
@@ -614,7 +625,7 @@ class TestSessionRecording:
             model="claude-opus-4-5-20251101"
         )
 
-        harness._record_session(
+        harness._completion_handler.record_session(
             session, feature, result,
             outcome=SessionOutcome.SUCCESS
         )
@@ -642,7 +653,7 @@ class TestSessionRecording:
         )
 
         with patch.object(harness.alert_manager, 'add_alert') as mock_alert:
-            harness._record_session(
+            harness._completion_handler.record_session(
                 session, feature, result,
                 outcome=SessionOutcome.FAILURE
             )
@@ -666,7 +677,7 @@ class TestSessionRecording:
             started_at=datetime.now(),
             ended_at=datetime.now()
         )
-        harness._record_session(session1, feature, result1, outcome=SessionOutcome.SUCCESS)
+        harness._completion_handler.record_session(session1, feature, result1, outcome=SessionOutcome.SUCCESS)
 
         # Record second session
         session2 = harness.sessions.create_session()
@@ -678,9 +689,9 @@ class TestSessionRecording:
             started_at=datetime.now(),
             ended_at=datetime.now()
         )
-        harness._record_session(session2, feature, result2, outcome=SessionOutcome.SUCCESS)
+        harness._completion_handler.record_session(session2, feature, result2, outcome=SessionOutcome.SUCCESS)
 
-        assert harness._total_cost_usd == pytest.approx(0.08, rel=0.01)
+        assert harness._completion_handler.get_total_cost() == pytest.approx(0.08, rel=0.01)
 
 
 # =============================================================================
@@ -688,22 +699,26 @@ class TestSessionRecording:
 # =============================================================================
 
 class TestGracefulShutdown:
-    """Tests for graceful shutdown handling."""
+    """Tests for graceful shutdown handling.
+
+    Note: Shutdown handling is now on the SessionRecoveryManager component.
+    """
 
     def test_handle_shutdown_signal(self, harness):
         """Should set shutdown flag on signal."""
-        assert harness._shutdown_requested is False
+        assert not harness._recovery_manager.is_shutdown_requested()
 
-        harness._handle_shutdown_signal(signal.SIGINT, None)
+        harness._recovery_manager._handle_shutdown_signal(signal.SIGINT, None)
 
-        assert harness._shutdown_requested is True
+        assert harness._recovery_manager.is_shutdown_requested()
 
     @pytest.mark.asyncio
     async def test_graceful_shutdown_commits_changes(self, harness):
         """Should commit uncommitted changes on shutdown."""
         harness.load_backlog()
-        harness._current_feature = harness.backlog.features[0]
-        harness.sessions.create_session()
+        session = harness.sessions.create_session()
+        feature = harness.backlog.features[0]
+        harness._recovery_manager.set_current_context(feature=feature, session=session)
 
         mock_git_status = Mock(
             has_changes=True,
@@ -715,7 +730,7 @@ class TestGracefulShutdown:
         with patch.object(harness.git, 'get_status', return_value=mock_git_status):
             with patch.object(harness.git, 'stage_all') as mock_stage:
                 with patch.object(harness.git, 'commit', return_value="abc123") as mock_commit:
-                    await harness._graceful_shutdown()
+                    await harness._recovery_manager.graceful_shutdown()
 
                     mock_stage.assert_called_once()
                     mock_commit.assert_called_once()
@@ -724,14 +739,15 @@ class TestGracefulShutdown:
     async def test_graceful_shutdown_saves_state(self, harness):
         """Should save session state on shutdown."""
         harness.load_backlog()
-        harness._current_feature = harness.backlog.features[0]
         session = harness.sessions.create_session()
+        feature = harness.backlog.features[0]
+        harness._recovery_manager.set_current_context(feature=feature, session=session)
 
         with patch.object(harness.git, 'get_status') as mock_status:
             mock_status.return_value = Mock(has_changes=False, last_commit_hash="abc")
 
             with patch.object(session, 'save_state') as mock_save:
-                await harness._graceful_shutdown()
+                await harness._recovery_manager.graceful_shutdown()
 
                 mock_save.assert_called_once()
 
@@ -741,7 +757,10 @@ class TestGracefulShutdown:
 # =============================================================================
 
 class TestFeatureCompletion:
-    """Tests for feature completion flow."""
+    """Tests for feature completion flow.
+
+    Note: Feature completion is now on the FeatureCompletionHandler component.
+    """
 
     @pytest.mark.asyncio
     async def test_complete_feature_runs_tests(self, harness):
@@ -767,7 +786,9 @@ class TestFeatureCompletion:
                 staged_files=[]
             )
 
-            completed = await harness._complete_feature(session, feature, result)
+            completed = await harness._completion_handler.complete_feature(
+                session, feature, result, harness.backlog
+            )
 
             assert completed is True
             assert harness.backlog.features[0].status == FeatureStatus.COMPLETED
@@ -789,7 +810,9 @@ class TestFeatureCompletion:
             ended_at=datetime.now()
         )
 
-        completed = await harness._complete_feature(session, feature, result)
+        completed = await harness._completion_handler.complete_feature(
+            session, feature, result, harness.backlog
+        )
 
         assert completed is False
         assert harness.backlog.features[0].status != FeatureStatus.COMPLETED
@@ -829,13 +852,13 @@ class TestMainRunLoop:
     @pytest.mark.asyncio
     async def test_run_respects_shutdown_flag(self, harness):
         """Should stop when shutdown requested."""
-        harness._shutdown_requested = True
+        harness._recovery_manager._shutdown_requested = True
         harness.load_backlog()
 
         with patch.object(harness, '_run_health_checks', new_callable=AsyncMock) as mock_health:
             mock_health.return_value = ([], [])
 
-            with patch.object(harness, '_graceful_shutdown', new_callable=AsyncMock) as mock_shutdown:
+            with patch.object(harness._recovery_manager, 'graceful_shutdown', new_callable=AsyncMock) as mock_shutdown:
                 await harness.run()
 
                 mock_shutdown.assert_called()
