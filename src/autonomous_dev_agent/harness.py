@@ -42,6 +42,8 @@ from .alert_manager import (
     create_handoff_alert,
     create_cost_threshold_alert,
 )
+from .workspace import WorkspaceManager
+from .session_logger import SessionLogger
 
 
 # Windows-compatible symbols (cp1252 doesn't support Unicode checkmarks)
@@ -88,6 +90,11 @@ class AutonomousHarness:
         self.cost_tracker = CostTracker(self.config.model)
         self.model_selector = ModelSelector(default_model=self.config.model)
         self.alert_manager = AlertManager(self.project_path, enable_desktop_notifications=True)
+
+        # Observability workspace
+        self.workspace = WorkspaceManager(self.project_path)
+        self.workspace.ensure_structure()  # Ensure .ada/ directories exist
+        self._current_session_logger: Optional[SessionLogger] = None
 
         # State
         self.initialized = False
@@ -446,6 +453,9 @@ class AutonomousHarness:
             title="Initialization"
         ))
 
+        # Ensure workspace structure exists
+        self.workspace.ensure_structure()
+
         template = self._load_prompt_template("initializer")
         prompt = template.format(
             project_name=self.backlog.project_name,
@@ -458,7 +468,41 @@ class AutonomousHarness:
         self.progress.initialize(self.backlog.project_name)
 
         session = self.sessions.create_session()
+
+        # Create session logger
+        session_id = self.workspace.get_next_session_id(
+            agent_type="initializer",
+            feature_id=None
+        )
+        self._current_session_logger = SessionLogger(
+            workspace=self.workspace,
+            session_id=session_id,
+            agent_type="initializer",
+            model=self.config.model,
+            config={
+                "context_threshold_percent": self.config.context_threshold_percent,
+                "session_mode": self.config.session_mode.value,
+            }
+        )
+        self._current_session_logger.log_session_start()
+        self._current_session_logger.log_prompt(
+            prompt_name="initializer",
+            prompt_text=prompt,
+            variables={
+                "project_name": self.backlog.project_name,
+                "feature_count": len(self.backlog.features),
+            }
+        )
+
         result = await session.run(prompt, on_message=self._on_message)
+
+        # Log session end
+        outcome = "success" if result.success else "failure"
+        self._current_session_logger.log_session_end(
+            outcome=outcome,
+            reason="Initialization complete" if result.success else result.error_message
+        )
+        self._current_session_logger = None
 
         if result.success:
             self.progress.append_entry(ProgressEntry(
@@ -511,6 +555,35 @@ class AutonomousHarness:
         session = self.sessions.create_session()
         self.progress.log_session_start(session.session_id, feature)
 
+        # Create session logger for observability
+        log_session_id = self.workspace.get_next_session_id(
+            agent_type="coding",
+            feature_id=feature.id
+        )
+        self._current_session_logger = SessionLogger(
+            workspace=self.workspace,
+            session_id=log_session_id,
+            agent_type="coding",
+            feature_id=feature.id,
+            feature_name=feature.name,
+            model=selected_model,
+            config={
+                "context_threshold_percent": self.config.context_threshold_percent,
+                "session_mode": self.config.session_mode.value,
+                "max_turns": self.config.cli_max_turns,
+            }
+        )
+        self._current_session_logger.log_session_start()
+        self._current_session_logger.log_prompt(
+            prompt_name="coding",
+            prompt_text=prompt,
+            variables={
+                "feature_id": feature.id,
+                "feature_name": feature.name,
+                "acceptance_criteria": feature.acceptance_criteria,
+            }
+        )
+
         # Save session state for recovery
         self._save_session_state(session, feature)
 
@@ -518,25 +591,67 @@ class AutonomousHarness:
         result = await session.run(prompt, on_message=self._on_message)
 
         # Handle result
+        session_outcome = "success"
+        session_reason = None
+        commit_hash = None
+
         if result.handoff_requested:
+            session_outcome = "handoff"
+            session_reason = f"Context threshold reached at {result.context_usage_percent:.1f}%"
             await self._perform_handoff(session, feature, result)
         elif result.feature_completed or result.success:
             completed = await self._complete_feature(session, feature, result)
             if not completed:
                 # Tests failed - feature remains in_progress
                 result.feature_completed = False
+                session_outcome = "failure"
+                session_reason = "Tests or verification failed"
                 # Record as failure
                 self._record_session(
                     session, feature, result,
                     outcome=SessionOutcome.FAILURE,
                 )
+            else:
+                session_outcome = "success"
+                session_reason = "Feature completed successfully"
         else:
             # Session failed - record to history
-            outcome = SessionOutcome.TIMEOUT if "timeout" in (result.error_message or "").lower() else SessionOutcome.FAILURE
+            is_timeout = "timeout" in (result.error_message or "").lower()
+            outcome = SessionOutcome.TIMEOUT if is_timeout else SessionOutcome.FAILURE
+            session_outcome = "timeout" if is_timeout else "failure"
+            session_reason = result.error_message
             self._record_session(
                 session, feature, result,
                 outcome=outcome,
             )
+
+        # Log session end to observability workspace
+        if self._current_session_logger:
+            # Log context/usage update if available
+            if result.usage_stats:
+                self._current_session_logger.log_context_update(
+                    input_tokens=result.usage_stats.input_tokens,
+                    output_tokens=result.usage_stats.output_tokens,
+                    cache_read_tokens=result.usage_stats.cache_read_tokens,
+                    cache_write_tokens=result.usage_stats.cache_write_tokens,
+                    cost_usd=result.usage_stats.cost_usd
+                )
+
+            # Log any errors
+            if result.error_message and result.error_category:
+                self._current_session_logger.log_error(
+                    category=result.error_category.value,
+                    message=result.error_message,
+                    recoverable=(session_outcome in ["handoff", "timeout"])
+                )
+
+            self._current_session_logger.log_session_end(
+                outcome=session_outcome,
+                reason=session_reason,
+                handoff_notes=f"Continue {feature.name}" if session_outcome == "handoff" else None,
+                commit_hash=commit_hash
+            )
+            self._current_session_logger = None
 
         # Restore original model setting
         self.config.model = original_model

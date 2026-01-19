@@ -212,9 +212,33 @@ class BaseSession(ABC):
         self.project_path = Path(project_path)
         self.session_id = session_id or f"session_{uuid.uuid4().hex[:8]}"
         self.context_usage_percent = 0.0
-        self._state_file = self.project_path / ".ada_session_state.json"
+        self._state_file = self._get_state_file_path()
         self._cost_tracker = CostTracker(config.model)
         self._started_at: Optional[datetime] = None
+
+    def _get_state_file_path(self) -> Path:
+        """Get the state file path with backward compatibility.
+
+        New location: .ada/state/session.json
+        Legacy location: .ada_session_state.json
+
+        Returns new location if .ada/ exists, otherwise legacy location.
+        """
+        new_path = self.project_path / ".ada" / "state" / "session.json"
+        legacy_path = self.project_path / ".ada_session_state.json"
+
+        # Check if legacy file exists first (takes precedence for backward compat)
+        if legacy_path.exists():
+            return legacy_path
+
+        # If .ada/ workspace exists, use new location
+        if (self.project_path / ".ada").exists():
+            # Ensure state directory exists
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            return new_path
+
+        # Default to legacy location for projects without .ada/
+        return legacy_path
 
     def save_state(self, state: SessionState) -> None:
         """Persist session state for recovery."""

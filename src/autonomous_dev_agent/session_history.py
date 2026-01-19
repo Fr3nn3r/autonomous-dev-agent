@@ -38,7 +38,8 @@ class CostSummary(BaseModel):
 class SessionHistory:
     """Manages persistent session history.
 
-    Stores records in .ada_session_history.json in the project directory.
+    Stores records in .ada/state/history.json (new) or
+    .ada_session_history.json (legacy) in the project directory.
     """
 
     DEFAULT_FILENAME = ".ada_session_history.json"
@@ -48,13 +49,41 @@ class SessionHistory:
 
         Args:
             project_path: Path to the project directory
-            filename: Custom filename (defaults to .ada_session_history.json)
+            filename: Custom filename (overrides auto-detection)
         """
         self.project_path = Path(project_path)
-        self.filename = filename or self.DEFAULT_FILENAME
-        self._history_file = self.project_path / self.filename
+        self.filename = filename
+        self._history_file = self._get_history_file_path()
         self._records: list[SessionRecord] = []
         self._load()
+
+    def _get_history_file_path(self) -> Path:
+        """Get the history file path with backward compatibility.
+
+        New location: .ada/state/history.json
+        Legacy location: .ada_session_history.json
+
+        Returns new location if .ada/ exists, otherwise legacy location.
+        """
+        # If custom filename specified, use it directly
+        if self.filename:
+            return self.project_path / self.filename
+
+        new_path = self.project_path / ".ada" / "state" / "history.json"
+        legacy_path = self.project_path / self.DEFAULT_FILENAME
+
+        # Check if legacy file exists first (takes precedence for backward compat)
+        if legacy_path.exists():
+            return legacy_path
+
+        # If .ada/ workspace exists, use new location
+        if (self.project_path / ".ada").exists():
+            # Ensure state directory exists
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            return new_path
+
+        # Default to legacy location for projects without .ada/
+        return legacy_path
 
     def _load(self) -> None:
         """Load session history from disk."""

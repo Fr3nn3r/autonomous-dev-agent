@@ -126,6 +126,18 @@ class Feature(BaseModel):
         description="Override model for this feature (e.g., 'claude-opus-4-5-20251101' for complex tasks)"
     )
 
+    # Test verification steps (optional, for test-driven features)
+    steps: list[str] = Field(
+        default_factory=list,
+        description="Step-by-step test verification steps for the feature"
+    )
+
+    # Source tracking - how this feature was created
+    source: Optional[str] = Field(
+        default=None,
+        description="How this feature was created: 'manual', 'discovery', or 'generated'"
+    )
+
 
 class Backlog(BaseModel):
     """The full feature backlog for a project."""
@@ -781,6 +793,107 @@ class AlertSeverity(str, Enum):
     WARNING = "warning"
     ERROR = "error"
     SUCCESS = "success"
+
+
+# =============================================================================
+# Observability Models (Session Logging)
+# =============================================================================
+
+
+class LogEntryType(str, Enum):
+    """Types of log entries for session JSONL files."""
+    SESSION_START = "session_start"
+    PROMPT = "prompt"
+    ASSISTANT = "assistant"
+    TOOL_RESULT = "tool_result"
+    CONTEXT_UPDATE = "context_update"
+    ERROR = "error"
+    SESSION_END = "session_end"
+
+
+class ProjectContext(BaseModel):
+    """Project metadata stored in .ada/project.json."""
+    version: str = "1.0"
+    name: str = Field(..., description="Project name")
+    description: str = Field(default="", description="Project description")
+    created_at: datetime = Field(default_factory=datetime.now)
+    created_by: str = Field(default="user")
+
+    context: dict = Field(
+        default_factory=dict,
+        description="Additional context (tech_stack, constraints, notes)"
+    )
+    init_session: Optional[dict] = Field(
+        default=None,
+        description="Info about the initializer session"
+    )
+
+
+class SessionIndexEntry(BaseModel):
+    """Summary entry in the session index for fast lookup."""
+    session_id: str = Field(..., description="Unique session identifier")
+    file: str = Field(..., description="Relative path to the session log file")
+    agent_type: str = Field(..., description="Type of agent: initializer or coding")
+    feature_id: Optional[str] = Field(default=None, description="Feature being worked on")
+    started_at: datetime = Field(default_factory=datetime.now)
+    ended_at: Optional[datetime] = Field(default=None)
+    outcome: Optional[str] = Field(default=None, description="success, failure, handoff, timeout")
+    turns: int = Field(default=0, description="Number of agentic turns")
+    tokens_total: int = Field(default=0, description="Total tokens used")
+    cost_usd: float = Field(default=0.0, description="Session cost in USD")
+    size_bytes: int = Field(default=0, description="Size of the log file")
+    archived: bool = Field(default=False, description="Whether session is archived")
+    archive_file: Optional[str] = Field(default=None, description="Archive file if archived")
+
+
+class SessionIndex(BaseModel):
+    """Index of all sessions for fast lookup without scanning log files."""
+    version: str = "1.0"
+    total_sessions: int = Field(default=0)
+    total_size_bytes: int = Field(default=0)
+    sessions: list[SessionIndexEntry] = Field(default_factory=list)
+
+    def add_session(self, entry: SessionIndexEntry) -> None:
+        """Add a session to the index."""
+        self.sessions.append(entry)
+        self.total_sessions = len(self.sessions)
+        self.total_size_bytes += entry.size_bytes
+
+    def get_session(self, session_id: str) -> Optional[SessionIndexEntry]:
+        """Get a session by ID."""
+        for session in self.sessions:
+            if session.session_id == session_id:
+                return session
+        return None
+
+    def update_session(self, session_id: str, **updates) -> bool:
+        """Update a session entry."""
+        for i, session in enumerate(self.sessions):
+            if session.session_id == session_id:
+                session_dict = session.model_dump()
+                session_dict.update(updates)
+                self.sessions[i] = SessionIndexEntry.model_validate(session_dict)
+                # Recalculate total size
+                self.total_size_bytes = sum(s.size_bytes for s in self.sessions)
+                return True
+        return False
+
+    def get_recent_sessions(self, count: int = 10) -> list[SessionIndexEntry]:
+        """Get the most recent sessions."""
+        sorted_sessions = sorted(
+            self.sessions,
+            key=lambda s: s.started_at,
+            reverse=True
+        )
+        return sorted_sessions[:count]
+
+    def get_sessions_by_feature(self, feature_id: str) -> list[SessionIndexEntry]:
+        """Get all sessions for a specific feature."""
+        return [s for s in self.sessions if s.feature_id == feature_id]
+
+    def get_sessions_by_outcome(self, outcome: str) -> list[SessionIndexEntry]:
+        """Get all sessions with a specific outcome."""
+        return [s for s in self.sessions if s.outcome == outcome]
 
 
 class Alert(BaseModel):

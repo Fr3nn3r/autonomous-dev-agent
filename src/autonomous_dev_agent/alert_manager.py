@@ -15,8 +15,8 @@ from .models import Alert, AlertType, AlertSeverity
 class AlertManager:
     """Manages alerts for the dashboard.
 
-    Stores alerts in .ada_alerts.json and provides methods for
-    adding, reading, and dismissing alerts.
+    Stores alerts in .ada/alerts.json (new) or .ada_alerts.json (legacy)
+    and provides methods for adding, reading, and dismissing alerts.
     """
 
     DEFAULT_FILENAME = ".ada_alerts.json"
@@ -32,15 +32,42 @@ class AlertManager:
 
         Args:
             project_path: Path to the project directory
-            filename: Custom filename (defaults to .ada_alerts.json)
+            filename: Custom filename (overrides auto-detection)
             enable_desktop_notifications: Whether to show desktop notifications
         """
         self.project_path = Path(project_path)
-        self.filename = filename or self.DEFAULT_FILENAME
-        self._alerts_file = self.project_path / self.filename
+        self.filename = filename
+        self._alerts_file = self._get_alerts_file_path()
         self._alerts: list[Alert] = []
         self._desktop_notifications_enabled = enable_desktop_notifications
         self._load()
+
+    def _get_alerts_file_path(self) -> Path:
+        """Get the alerts file path with backward compatibility.
+
+        New location: .ada/alerts.json
+        Legacy location: .ada_alerts.json
+
+        Returns new location if .ada/ exists, otherwise legacy location.
+        """
+        # If custom filename specified, use it directly
+        if self.filename:
+            return self.project_path / self.filename
+
+        new_path = self.project_path / ".ada" / "alerts.json"
+        legacy_path = self.project_path / self.DEFAULT_FILENAME
+
+        # Check if legacy file exists first (takes precedence for backward compat)
+        if legacy_path.exists():
+            return legacy_path
+
+        # If .ada/ workspace exists, use new location
+        if (self.project_path / ".ada").exists():
+            # .ada/ dir exists, so use it (alerts.json is at .ada/ level, no subdir needed)
+            return new_path
+
+        # Default to legacy location for projects without .ada/
+        return legacy_path
 
     def _load(self) -> None:
         """Load alerts from disk."""

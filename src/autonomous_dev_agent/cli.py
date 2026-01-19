@@ -23,6 +23,11 @@ from .discovery import (
 from .discovery.reviewer import CodeReviewer
 from .discovery.requirements import RequirementsExtractor
 from .verification import FeatureVerifier, PreCompleteHook
+from .workspace import WorkspaceManager
+from .log_formatter import (
+    format_session_list, format_session_detail, stream_session_pretty,
+    format_workspace_info, export_sessions_to_jsonl, format_duration, format_cost
+)
 
 console = Console()
 
@@ -108,14 +113,27 @@ def run(
 @main.command()
 @click.argument('project_path', type=click.Path())
 @click.option('--name', prompt='Project name', help='Name of the project')
-def init(project_path: str, name: str):
+@click.option('--description', default='', help='Project description (prompted if not provided)')
+def init(project_path: str, name: str, description: str):
     """Initialize a new project for autonomous development.
 
-    Creates the feature-list.json and directory structure.
+    Creates the feature-list.json, .ada/ directory structure, and project.json.
+
+    Example:
+        ada init ./my-project --name "My App" --description "A web app that..."
     """
     path = Path(project_path)
     path.mkdir(parents=True, exist_ok=True)
 
+    # Prompt for description if not provided
+    if not description:
+        description = click.prompt(
+            'Project description (optional, press Enter to skip)',
+            default='',
+            show_default=False
+        )
+
+    # Create backlog
     backlog = Backlog(
         project_name=name,
         project_path=str(path.resolve()),
@@ -125,13 +143,33 @@ def init(project_path: str, name: str):
     backlog_file = path / "feature-list.json"
     if backlog_file.exists():
         console.print(f"[yellow]Backlog already exists at {backlog_file}[/yellow]")
-        return
+    else:
+        backlog_file.write_text(backlog.model_dump_json(indent=2))
+        console.print(f"[green]OK[/green] Created {backlog_file}")
 
-    backlog_file.write_text(backlog.model_dump_json(indent=2))
-    console.print(f"[green]OK[/green] Created {backlog_file}")
+    # Create .ada/ workspace structure
+    workspace = WorkspaceManager(path)
+    workspace.ensure_structure()
+
+    # Create project.json
+    if not workspace.project_file.exists():
+        workspace.create_project_context(
+            name=name,
+            description=description,
+            created_by="user"
+        )
+        console.print(f"[green]OK[/green] Created .ada/project.json")
+    else:
+        console.print(f"[yellow]project.json already exists[/yellow]")
+
+    # Update .gitignore
+    if workspace.update_gitignore():
+        console.print(f"[green]OK[/green] Updated .gitignore")
+
     console.print(f"\nNext steps:")
     console.print(f"  1. Add features: ada add-feature {project_path} --name 'Feature name'")
     console.print(f"  2. Run agent: ada run {project_path}")
+    console.print(f"  3. View project info: ada info {project_path}")
 
 
 @main.command('add-feature')
@@ -895,6 +933,273 @@ def init_hooks(project_path: str):
     console.print(f"  ADA_FEATURE_NAME - Feature name")
     console.print(f"  ADA_FEATURE_CATEGORY - Feature category")
     console.print(f"\nExit with 0 to allow completion, non-zero to block.")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+def migrate(project_path: str):
+    """Migrate an existing project to the new .ada/ workspace structure.
+
+    Moves legacy state files to their new locations:
+    - .ada_session_state.json -> .ada/state/session.json
+    - .ada_session_history.json -> .ada/state/history.json
+    - .ada_alerts.json -> .ada/alerts.json
+
+    Also creates project.json from the backlog's project_name.
+
+    Example:
+        ada migrate ./my-project
+    """
+    path = Path(project_path)
+    workspace = WorkspaceManager(path)
+
+    console.print(f"\n[bold]Migrating project to new workspace structure[/bold]\n")
+
+    # Check what needs migration
+    legacy_state = workspace.get_legacy_state_file()
+    legacy_history = workspace.get_legacy_history_file()
+    legacy_alerts = workspace.get_legacy_alerts_file()
+
+    if not any([legacy_state, legacy_history, legacy_alerts]) and workspace.exists():
+        console.print("[green]Project already uses new workspace structure.[/green]")
+        return
+
+    # Create workspace structure
+    workspace.ensure_structure()
+    console.print(f"[green]OK[/green] Created .ada/ directory structure")
+
+    # Migrate files
+    results = workspace.migrate_legacy_files()
+
+    for file_type, success in results.items():
+        if success:
+            console.print(f"[green]OK[/green] Migrated {file_type}")
+        else:
+            console.print(f"[red]Failed[/red] Could not migrate {file_type}")
+
+    # Create project.json from backlog if it doesn't exist
+    if not workspace.project_file.exists():
+        backlog_file = path / "feature-list.json"
+        if backlog_file.exists():
+            try:
+                backlog = Backlog.model_validate_json(backlog_file.read_text())
+                workspace.create_project_context(
+                    name=backlog.project_name,
+                    description="",
+                    created_by="migration"
+                )
+                console.print(f"[green]OK[/green] Created project.json from backlog")
+            except Exception as e:
+                console.print(f"[yellow]Warning[/yellow] Could not read backlog: {e}")
+
+    # Update .gitignore
+    if workspace.update_gitignore():
+        console.print(f"[green]OK[/green] Updated .gitignore")
+
+    console.print(f"\n[green]Migration complete![/green]")
+    console.print(f"You can safely delete the old .ada_* files after verifying the migration.")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+def info(project_path: str):
+    """Display project information and statistics.
+
+    Shows project metadata, session counts, costs, and log usage.
+
+    Example:
+        ada info ./my-project
+    """
+    path = Path(project_path)
+    workspace = WorkspaceManager(path)
+
+    if not workspace.exists():
+        console.print("[yellow]No .ada/ workspace found. Run 'ada init' or 'ada migrate' first.[/yellow]")
+        return
+
+    # Get workspace stats
+    stats = workspace.get_workspace_stats()
+
+    # Get feature stats from backlog
+    backlog_file = path / "feature-list.json"
+    if backlog_file.exists():
+        try:
+            backlog = Backlog.model_validate_json(backlog_file.read_text())
+            completed = sum(1 for f in backlog.features if f.status == FeatureStatus.COMPLETED)
+            in_progress = sum(1 for f in backlog.features if f.status == FeatureStatus.IN_PROGRESS)
+            pending = sum(1 for f in backlog.features if f.status == FeatureStatus.PENDING)
+            stats["features_total"] = len(backlog.features)
+            stats["features_completed"] = completed
+            stats["features_in_progress"] = in_progress
+            stats["features_pending"] = pending
+        except Exception:
+            pass
+
+    # Display formatted info
+    renderables = format_workspace_info(stats)
+    for r in renderables:
+        console.print(r)
+
+    # Add feature summary if available
+    if "features_total" in stats:
+        console.print()
+        console.print("[bold]Features:[/bold]")
+        console.print(
+            f"  [green]Completed:[/green] {stats['features_completed']}  "
+            f"[yellow]In Progress:[/yellow] {stats['features_in_progress']}  "
+            f"[white]Pending:[/white] {stats['features_pending']}  "
+            f"(Total: {stats['features_total']})"
+        )
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+@click.option('--session', 'session_id', help='View specific session by ID')
+@click.option('--feature', 'feature_id', help='Filter by feature ID')
+@click.option('--outcome', type=click.Choice(['success', 'failure', 'handoff', 'timeout']),
+              help='Filter by outcome')
+@click.option('--since', help='Filter by date (YYYY-MM-DD)')
+@click.option('--errors', is_flag=True, help='Only show sessions with errors')
+@click.option('--tail', is_flag=True, help='Follow current session in real-time')
+@click.option('--format', 'output_format', type=click.Choice(['pretty', 'json']),
+              default='pretty', help='Output format')
+@click.option('--export', 'export_file', type=click.Path(), help='Export to file')
+@click.option('--limit', default=20, help='Maximum sessions to show')
+def logs(
+    project_path: str,
+    session_id: Optional[str],
+    feature_id: Optional[str],
+    outcome: Optional[str],
+    since: Optional[str],
+    errors: bool,
+    tail: bool,
+    output_format: str,
+    export_file: Optional[str],
+    limit: int
+):
+    """View session logs.
+
+    List recent sessions or view a specific session's details.
+
+    \b
+    Examples:
+        ada logs ./my-project                    # List recent sessions
+        ada logs ./my-project --session 20240115_001  # View specific session
+        ada logs ./my-project --feature user-auth     # Filter by feature
+        ada logs ./my-project --outcome failure       # Filter by outcome
+        ada logs ./my-project --tail                  # Follow current session
+        ada logs ./my-project --export logs.jsonl    # Export to file
+    """
+    from datetime import datetime as dt
+
+    path = Path(project_path)
+    workspace = WorkspaceManager(path)
+
+    if not workspace.exists():
+        console.print("[yellow]No .ada/ workspace found. Run 'ada init' or 'ada migrate' first.[/yellow]")
+        return
+
+    # Handle export
+    if export_file:
+        export_path = Path(export_file)
+        session_ids = [session_id] if session_id else None
+        count = export_sessions_to_jsonl(
+            workspace.sessions_dir,
+            export_path,
+            session_ids=session_ids
+        )
+        console.print(f"[green]OK[/green] Exported {count} entries to {export_path}")
+        return
+
+    # Handle tail mode
+    if tail:
+        current_id = workspace.get_current_session_id()
+        if not current_id:
+            console.print("[yellow]No active session to follow.[/yellow]")
+            return
+
+        log_path = workspace.get_session_log_path(current_id)
+        console.print(f"[dim]Following session: {current_id}[/dim]")
+        console.print("[dim]Press Ctrl+C to stop[/dim]\n")
+
+        try:
+            if output_format == "json":
+                import json
+                from .session_logger import stream_session_log
+                for entry in stream_session_log(log_path, follow=True):
+                    print(json.dumps(entry, default=str))
+            else:
+                for line in stream_session_pretty(log_path, follow=True):
+                    console.print(line)
+        except KeyboardInterrupt:
+            console.print("\n[dim]Stopped following.[/dim]")
+        return
+
+    # Handle specific session view
+    if session_id:
+        log_path = workspace.get_session_log_path(session_id)
+        if not log_path.exists():
+            console.print(f"[red]Session not found: {session_id}[/red]")
+            return
+
+        if output_format == "json":
+            from .session_logger import read_session_log
+            import json
+            entries = read_session_log(log_path)
+            for entry in entries:
+                print(json.dumps(entry, default=str))
+        else:
+            renderables = format_session_detail(log_path)
+            for r in renderables:
+                console.print(r)
+        return
+
+    # List sessions with filters
+    index = workspace.get_session_index()
+    sessions = index.sessions.copy()
+
+    # Apply filters
+    if feature_id:
+        sessions = [s for s in sessions if s.feature_id == feature_id]
+
+    if outcome:
+        sessions = [s for s in sessions if s.outcome == outcome]
+
+    if since:
+        try:
+            since_date = dt.strptime(since, "%Y-%m-%d")
+            sessions = [s for s in sessions if s.started_at >= since_date]
+        except ValueError:
+            console.print(f"[red]Invalid date format: {since}. Use YYYY-MM-DD.[/red]")
+            return
+
+    if errors:
+        # Only sessions that have errors (need to scan log files)
+        from .session_logger import get_session_summary
+        filtered = []
+        for s in sessions:
+            log_path = workspace.get_session_log_path(s.session_id)
+            summary = get_session_summary(log_path)
+            if summary and summary.get("errors"):
+                filtered.append(s)
+        sessions = filtered
+
+    # Sort by date (newest first) and limit
+    sessions = sorted(sessions, key=lambda s: s.started_at, reverse=True)[:limit]
+
+    if not sessions:
+        console.print("[yellow]No sessions found matching filters.[/yellow]")
+        return
+
+    # Display
+    if output_format == "json":
+        import json
+        for s in sessions:
+            print(json.dumps(s.model_dump(mode="json"), default=str))
+    else:
+        table = format_session_list(sessions)
+        console.print(table)
+        console.print(f"\n[dim]Showing {len(sessions)} session(s)[/dim]")
 
 
 if __name__ == '__main__':

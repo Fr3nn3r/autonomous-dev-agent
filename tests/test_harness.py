@@ -380,9 +380,9 @@ class TestPromptTemplateLoading:
 
     def test_load_local_prompt_override(self, harness):
         """Should prefer local prompts over package prompts."""
-        # Create local prompts directory
+        # .ada/prompts/ is created by harness initialization via ensure_structure()
         local_prompts = harness.project_path / ".ada" / "prompts"
-        local_prompts.mkdir(parents=True)
+        assert local_prompts.exists()  # Should already exist
 
         custom_template = "Custom template for {feature_name}"
         (local_prompts / "coding.txt").write_text(custom_template)
@@ -559,8 +559,8 @@ class TestSessionStateManagement:
 
             harness._save_session_state(session, feature, context_percent=50.0)
 
-        # Verify state was saved
-        state_file = harness.project_path / ".ada_session_state.json"
+        # Verify state was saved (new location is .ada/state/session.json)
+        state_file = harness.project_path / ".ada" / "state" / "session.json"
         assert state_file.exists()
 
         state = SessionState.model_validate_json(state_file.read_text())
