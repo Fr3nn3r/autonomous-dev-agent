@@ -23,6 +23,7 @@ from .discovery import (
 from .discovery.reviewer import CodeReviewer
 from .discovery.requirements import RequirementsExtractor
 from .verification import FeatureVerifier, PreCompleteHook
+from .generation import SpecParser, FeatureGenerator
 from .workspace import WorkspaceManager
 from .log_formatter import (
     format_session_list, format_session_detail, stream_session_pretty,
@@ -114,13 +115,31 @@ def run(
 @click.argument('project_path', type=click.Path())
 @click.option('--name', prompt='Project name', help='Name of the project')
 @click.option('--description', default='', help='Project description (prompted if not provided)')
-def init(project_path: str, name: str, description: str):
+@click.option('--spec', type=click.Path(exists=True), help='Specification file to generate features from')
+@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model for spec generation')
+@click.option('--max-features', default=50, help='Maximum features to generate from spec')
+@click.option('--min-features', default=20, help='Minimum features to generate from spec')
+def init(
+    project_path: str,
+    name: str,
+    description: str,
+    spec: Optional[str],
+    model: str,
+    max_features: int,
+    min_features: int
+):
     """Initialize a new project for autonomous development.
 
     Creates the feature-list.json, .ada/ directory structure, and project.json.
 
-    Example:
-        ada init ./my-project --name "My App" --description "A web app that..."
+    \b
+    Examples:
+        ada init ./my-project --name "My App"
+        ada init ./my-project --name "My App" --spec ./spec.md
+        ada init ./my-project --name "My App" --spec ./spec.md --max-features 30
+
+    When --spec is provided, Claude AI analyzes the specification file and
+    generates a feature backlog automatically.
     """
     path = Path(project_path)
     path.mkdir(parents=True, exist_ok=True)
@@ -133,16 +152,54 @@ def init(project_path: str, name: str, description: str):
             show_default=False
         )
 
-    # Create backlog
-    backlog = Backlog(
-        project_name=name,
-        project_path=str(path.resolve()),
-        features=[]
-    )
-
     backlog_file = path / "feature-list.json"
+
+    # Generate features from spec if provided
+    if spec:
+        console.print(f"\n[bold]Generating features from specification...[/bold]")
+        console.print(f"  Spec file: {spec}")
+        console.print(f"  Model: {model}")
+        console.print(f"  Feature range: {min_features}-{max_features}")
+        console.print("")
+
+        try:
+            generator = FeatureGenerator(
+                model=model,
+                min_features=min_features,
+                max_features=max_features,
+            )
+            result = generator.generate_from_file(
+                spec_path=spec,
+                project_name=name,
+                project_path=path,
+            )
+
+            backlog = result.backlog
+            console.print(f"[green]OK[/green] Generated {result.feature_count} features")
+
+        except FileNotFoundError as e:
+            console.print(f"[red]Error:[/red] {e}")
+            return
+        except ValueError as e:
+            console.print(f"[red]Validation error:[/red] {e}")
+            return
+        except RuntimeError as e:
+            console.print(f"[red]Generation error:[/red] {e}")
+            return
+    else:
+        # Create empty backlog
+        backlog = Backlog(
+            project_name=name,
+            project_path=str(path.resolve()),
+            features=[]
+        )
+
+    # Save backlog
     if backlog_file.exists():
         console.print(f"[yellow]Backlog already exists at {backlog_file}[/yellow]")
+        if spec and click.confirm("Overwrite with generated features?"):
+            backlog_file.write_text(backlog.model_dump_json(indent=2))
+            console.print(f"[green]OK[/green] Updated {backlog_file}")
     else:
         backlog_file.write_text(backlog.model_dump_json(indent=2))
         console.print(f"[green]OK[/green] Created {backlog_file}")
@@ -167,9 +224,144 @@ def init(project_path: str, name: str, description: str):
         console.print(f"[green]OK[/green] Updated .gitignore")
 
     console.print(f"\nNext steps:")
-    console.print(f"  1. Add features: ada add-feature {project_path} --name 'Feature name'")
+    if spec:
+        console.print(f"  1. Review generated features: ada status {project_path}")
+    else:
+        console.print(f"  1. Add features: ada add-feature {project_path} --name 'Feature name'")
     console.print(f"  2. Run agent: ada run {project_path}")
     console.print(f"  3. View project info: ada info {project_path}")
+
+
+@main.command('generate-backlog')
+@click.argument('spec_file', type=click.Path(exists=True))
+@click.option('--project-path', '-p', type=click.Path(), default='.',
+              help='Project directory (default: current directory)')
+@click.option('--project-name', '-n', help='Project name (default: derived from spec)')
+@click.option('--max-features', default=50, help='Maximum features to generate')
+@click.option('--min-features', default=20, help='Minimum features to generate')
+@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model to use')
+@click.option('--output', '-o', default='feature-list.json', help='Output filename')
+@click.option('--merge', is_flag=True, help='Merge with existing backlog')
+@click.option('--dry-run', is_flag=True, help='Preview without saving')
+def generate_backlog(
+    spec_file: str,
+    project_path: str,
+    project_name: Optional[str],
+    max_features: int,
+    min_features: int,
+    model: str,
+    output: str,
+    merge: bool,
+    dry_run: bool
+):
+    """Generate a feature backlog from a specification file using Claude AI.
+
+    Analyzes the specification and generates a structured feature backlog
+    with priorities, acceptance criteria, and implementation steps.
+
+    \b
+    Examples:
+        ada generate-backlog ./spec.md
+        ada generate-backlog ./spec.md -p ./my-project -n "My App"
+        ada generate-backlog ./spec.md --max-features 30 --dry-run
+        ada generate-backlog ./spec.md --merge  # Merge with existing backlog
+
+    Supported file types: .txt, .md, .spec, .markdown
+    """
+    path = Path(project_path).resolve()
+    spec_path = Path(spec_file).resolve()
+
+    console.print(f"\n[bold]Generating Feature Backlog[/bold]")
+    console.print(f"  Spec: {spec_path.name}")
+    console.print(f"  Model: {model}")
+    console.print(f"  Features: {min_features}-{max_features}")
+    if dry_run:
+        console.print(f"  [yellow]DRY RUN - no files will be saved[/yellow]")
+    console.print("")
+
+    # Validate spec file
+    is_valid, error = SpecParser.validate_path(spec_path)
+    if not is_valid:
+        console.print(f"[red]Invalid spec file:[/red] {error}")
+        return
+
+    # Generate features
+    with console.status("[bold blue]Analyzing specification with Claude AI..."):
+        try:
+            generator = FeatureGenerator(
+                model=model,
+                min_features=min_features,
+                max_features=max_features,
+            )
+            result = generator.generate_from_file(
+                spec_path=spec_path,
+                project_name=project_name,
+                project_path=path,
+            )
+        except RuntimeError as e:
+            console.print(f"[red]Generation failed:[/red] {e}")
+            return
+        except ValueError as e:
+            console.print(f"[red]Validation error:[/red] {e}")
+            return
+
+    console.print(f"[green]OK[/green] Generated {result.feature_count} features")
+    console.print("")
+
+    # Show feature summary
+    table = Table(title="Generated Features")
+    table.add_column("ID", style="cyan")
+    table.add_column("Name")
+    table.add_column("Category")
+    table.add_column("Priority", justify="right")
+    table.add_column("Dependencies")
+
+    for f in result.backlog.features[:20]:  # Show first 20
+        deps = ", ".join(f.depends_on) if f.depends_on else "-"
+        table.add_row(
+            f.id,
+            f.name[:40] + "..." if len(f.name) > 40 else f.name,
+            f.category.value,
+            str(f.priority),
+            deps[:20] + "..." if len(deps) > 20 else deps
+        )
+
+    if result.feature_count > 20:
+        table.add_row("...", f"[dim]and {result.feature_count - 20} more[/dim]", "", "", "")
+
+    console.print(table)
+
+    if dry_run:
+        console.print("\n[yellow]Dry run complete - no files saved[/yellow]")
+        return
+
+    # Handle merge with existing backlog
+    output_path = path / output
+    backlog_to_save = result.backlog
+
+    if output_path.exists():
+        if merge:
+            try:
+                existing = Backlog.model_validate_json(output_path.read_text())
+                backlog_to_save = generator.merge_with_existing(result, existing)
+                new_count = len(backlog_to_save.features) - len(existing.features)
+                console.print(f"\n[green]OK[/green] Merged with existing backlog (+{new_count} new features)")
+            except Exception as e:
+                console.print(f"[red]Failed to merge:[/red] {e}")
+                return
+        else:
+            if not click.confirm(f"\n{output} already exists. Overwrite?"):
+                console.print("[yellow]Cancelled[/yellow]")
+                return
+
+    # Save backlog
+    output_path.write_text(backlog_to_save.model_dump_json(indent=2))
+    console.print(f"\n[green]OK[/green] Saved {len(backlog_to_save.features)} features to {output_path}")
+
+    # Next steps
+    console.print(f"\nNext steps:")
+    console.print(f"  1. Review features: ada status {project_path}")
+    console.print(f"  2. Run agent: ada run {project_path}")
 
 
 @main.command('add-feature')
