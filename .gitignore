@@ -44,3 +44,10 @@ htmlcov/
 # OS
 .DS_Store
 Thumbs.db
+
+# Node.js
+node_modules/
+
+# Playwright
+playwright-report/
+test-results/

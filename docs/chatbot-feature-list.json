@@ -1,0 +1,2507 @@
+{
+  "project_name": "AI Chatbot",
+  "project_path": "",
+  "features": [
+    {
+      "id": "project-structure-setup",
+      "name": "Project Structure Setup",
+      "description": "Initialize the monorepo structure with separate backend (Python/FastAPI) and frontend (React/Vite) directories. Set up package managers, basic configs, and workspace organization.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 100,
+      "acceptance_criteria": [
+        "Root directory contains backend/ and frontend/ directories",
+        "Python virtual environment configured in backend/",
+        "Node package.json configured in frontend/",
+        "Git repository initialized with appropriate .gitignore",
+        "README.md with project overview created"
+      ],
+      "steps": [
+        "Create backend/ directory with Python project structure",
+        "Create frontend/ directory with Vite React template",
+        "Configure root-level scripts for running both services",
+        "Set up shared configuration files"
+      ],
+      "depends_on": [],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "backend-fastapi-setup",
+      "name": "Backend FastAPI Foundation",
+      "description": "Set up FastAPI backend with proper project structure including routers, models, services, and configuration management. Include CORS, middleware, and error handling.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 99,
+      "acceptance_criteria": [
+        "FastAPI application starts successfully",
+        "Health check endpoint returns 200",
+        "CORS configured for frontend origin",
+        "Environment variables loaded from .env",
+        "Proper logging configured"
+      ],
+      "steps": [
+        "Install FastAPI, uvicorn, pydantic, python-dotenv",
+        "Create main.py with FastAPI app",
+        "Set up routers/ directory structure",
+        "Configure CORS middleware",
+        "Add health check endpoint"
+      ],
+      "depends_on": ["project-structure-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "frontend-react-vite-setup",
+      "name": "Frontend React Vite Setup",
+      "description": "Initialize React application with Vite, TypeScript, and essential development tooling. Configure path aliases and build optimization.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 98,
+      "acceptance_criteria": [
+        "Vite dev server starts successfully",
+        "TypeScript compilation works without errors",
+        "Path aliases configured (@/ prefix)",
+        "ESLint and Prettier configured",
+        "Build produces optimized output"
+      ],
+      "steps": [
+        "Create Vite React TypeScript project",
+        "Configure vite.config.ts with aliases",
+        "Set up tsconfig.json",
+        "Configure ESLint and Prettier",
+        "Create initial App component"
+      ],
+      "depends_on": ["project-structure-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "shadcn-ui-installation",
+      "name": "shadcn/ui Component Library Setup",
+      "description": "Install and configure shadcn/ui with Tailwind CSS. Set up the component system with proper theming foundation and install essential base components.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 97,
+      "acceptance_criteria": [
+        "Tailwind CSS configured and working",
+        "shadcn/ui CLI initialized",
+        "Base components installed (Button, Card, Input, etc.)",
+        "CSS variables defined in globals.css",
+        "Components render correctly"
+      ],
+      "steps": [
+        "Install Tailwind CSS and dependencies",
+        "Initialize shadcn/ui with CLI",
+        "Install essential components",
+        "Configure component aliases",
+        "Verify component rendering"
+      ],
+      "depends_on": ["frontend-react-vite-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "theme-provider-setup",
+      "name": "Theme Provider and Animation Setup",
+      "description": "Implement the @space-man/react-theme-animation provider for dark/light mode with animated circular reveal transitions. Configure three color themes: Northern Lights, Default, and Pink.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 96,
+      "acceptance_criteria": [
+        "SpacemanThemeProvider wraps the application",
+        "Three color themes available (northern-lights, default, pink)",
+        "Light/dark/system modes functional",
+        "500ms circular reveal animation plays on theme switch",
+        "Theme persists in localStorage"
+      ],
+      "steps": [
+        "Install @space-man/react-theme-animation",
+        "Create ThemeProvider wrapper component",
+        "Configure provider with all themes and modes",
+        "Add CSS variables for all theme combinations",
+        "Test theme switching functionality"
+      ],
+      "depends_on": ["shadcn-ui-installation"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "tailwind-theme-config",
+      "name": "Tailwind Theme Configuration",
+      "description": "Configure Tailwind CSS with CSS variable-based colors for seamless theme integration. Set up all semantic color tokens and safelist theme classes.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 95,
+      "acceptance_criteria": [
+        "Tailwind config uses CSS variables for colors",
+        "All semantic tokens defined (background, foreground, primary, etc.)",
+        "Sidebar-specific tokens configured",
+        "Theme classes safelisted",
+        "darkMode set to class strategy"
+      ],
+      "steps": [
+        "Update tailwind.config.js with CSS variable colors",
+        "Add all semantic color mappings",
+        "Configure sidebar color tokens",
+        "Add safelist for theme classes",
+        "Test colors in components"
+      ],
+      "depends_on": ["theme-provider-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "css-theme-variables",
+      "name": "CSS Theme Variables Definition",
+      "description": "Define comprehensive CSS custom properties for all three color themes in both light and dark modes using OKLch color space for perceptually uniform colors.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 94,
+      "acceptance_criteria": [
+        "Root CSS variables defined for base theme",
+        "Northern Lights theme variables (light + dark)",
+        "Default theme variables (light + dark)",
+        "Pink theme variables (light + dark)",
+        "All components use semantic variables"
+      ],
+      "steps": [
+        "Create base :root variables",
+        "Define .theme-northern-lights styles",
+        "Define .theme-default styles",
+        "Define .theme-pink styles",
+        "Add dark mode variants for each theme"
+      ],
+      "depends_on": ["tailwind-theme-config"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "storage-abstraction-layer",
+      "name": "Storage Abstraction Layer",
+      "description": "Create an abstract storage interface in Python that allows switching between file-based and database implementations. Implement file-based storage as the default.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 93,
+      "acceptance_criteria": [
+        "Abstract StorageProvider interface defined",
+        "FileStorageProvider implements the interface",
+        "CRUD operations work for conversations",
+        "Storage path configurable via environment",
+        "Easy to swap implementations later"
+      ],
+      "steps": [
+        "Define abstract StorageProvider base class",
+        "Implement FileStorageProvider with JSON files",
+        "Create storage factory/dependency injection",
+        "Add configuration for storage path",
+        "Write unit tests for storage operations"
+      ],
+      "depends_on": ["backend-fastapi-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "openai-client-setup",
+      "name": "OpenAI API Client Setup",
+      "description": "Set up the OpenAI Python client with proper configuration, API key management, and error handling. Create a service layer for all OpenAI interactions.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 92,
+      "acceptance_criteria": [
+        "OpenAI client initialized with API key from env",
+        "Service class wraps all OpenAI calls",
+        "Proper error handling for API errors",
+        "Rate limiting awareness",
+        "Timeout configuration"
+      ],
+      "steps": [
+        "Install openai Python package",
+        "Create OpenAIService class",
+        "Configure API key from environment",
+        "Implement error handling wrapper",
+        "Add retry logic for transient failures"
+      ],
+      "depends_on": ["backend-fastapi-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-data-models",
+      "name": "Conversation Data Models",
+      "description": "Define Pydantic models for conversations, messages, and related entities. Include validation, serialization, and type safety.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 91,
+      "acceptance_criteria": [
+        "Conversation model with id, title, timestamps",
+        "Message model with role, content, metadata",
+        "Proper datetime handling",
+        "JSON serialization works correctly",
+        "Validation catches invalid data"
+      ],
+      "steps": [
+        "Create models/conversation.py",
+        "Define Conversation Pydantic model",
+        "Define Message Pydantic model",
+        "Add model configuration and validators",
+        "Create model factory functions"
+      ],
+      "depends_on": ["backend-fastapi-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "api-router-structure",
+      "name": "API Router Structure",
+      "description": "Set up the FastAPI router structure with versioned API endpoints. Create routers for chat, conversations, models, and settings.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 90,
+      "acceptance_criteria": [
+        "Routers organized in routers/ directory",
+        "API versioning implemented (/api/v1/)",
+        "Chat router for message operations",
+        "Conversations router for CRUD",
+        "Models router for available models"
+      ],
+      "steps": [
+        "Create routers/__init__.py",
+        "Create chat_router.py",
+        "Create conversations_router.py",
+        "Create models_router.py",
+        "Wire routers to main app"
+      ],
+      "depends_on": ["conversation-data-models"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "frontend-api-client",
+      "name": "Frontend API Client Layer",
+      "description": "Create a typed API client for the frontend using fetch or axios. Include request/response interceptors, error handling, and TypeScript types.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 89,
+      "acceptance_criteria": [
+        "API client class with all endpoints",
+        "TypeScript interfaces match backend models",
+        "Error handling with typed errors",
+        "Base URL configurable",
+        "Request cancellation support"
+      ],
+      "steps": [
+        "Create api/ directory in frontend",
+        "Define TypeScript interfaces",
+        "Implement API client class",
+        "Add error handling utilities",
+        "Create hooks for common operations"
+      ],
+      "depends_on": ["frontend-react-vite-setup", "api-router-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "chat-state-management",
+      "name": "Chat State Management",
+      "description": "Implement React state management for chat functionality using Context or Zustand. Handle current conversation, messages, loading states, and streaming.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 88,
+      "acceptance_criteria": [
+        "Chat context/store created",
+        "Current conversation state managed",
+        "Messages array with optimistic updates",
+        "Loading and streaming states",
+        "Actions for send, clear, load"
+      ],
+      "steps": [
+        "Create ChatContext or Zustand store",
+        "Define state shape and types",
+        "Implement state actions",
+        "Add selectors for derived state",
+        "Create custom hooks for access"
+      ],
+      "depends_on": ["frontend-api-client"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "main-layout-structure",
+      "name": "Main Layout Structure",
+      "description": "Create the main application layout with sidebar, header, and main content area. Implement responsive design with collapsible sidebar.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 87,
+      "acceptance_criteria": [
+        "Three-column layout (sidebar, main, optional right panel)",
+        "Sidebar collapsible on mobile",
+        "Header with app title and controls",
+        "Main content area fills available space",
+        "Responsive breakpoints work correctly"
+      ],
+      "steps": [
+        "Create Layout component",
+        "Implement Sidebar component",
+        "Create Header component",
+        "Add responsive styles",
+        "Test on various screen sizes"
+      ],
+      "depends_on": ["shadcn-ui-installation", "theme-provider-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "sidebar-navigation",
+      "name": "Sidebar Navigation",
+      "description": "Build the sidebar with conversation history list, new chat button, and navigation items. Use sidebar-specific theme tokens for premium appearance.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 86,
+      "acceptance_criteria": [
+        "New Chat button prominently displayed",
+        "Conversation list with titles and dates",
+        "Active conversation highlighted",
+        "Hover states with sidebar-accent colors",
+        "Scrollable list with virtualization for many items"
+      ],
+      "steps": [
+        "Create Sidebar component structure",
+        "Implement NewChatButton component",
+        "Create ConversationList component",
+        "Add navigation items (settings, etc.)",
+        "Style with sidebar theme tokens"
+      ],
+      "depends_on": ["main-layout-structure", "css-theme-variables"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "chat-interface-container",
+      "name": "Chat Interface Container",
+      "description": "Create the main chat interface container with message list area, input area, and proper scrolling behavior. Handle empty state gracefully.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 85,
+      "acceptance_criteria": [
+        "Messages display in scrollable container",
+        "Auto-scroll to bottom on new messages",
+        "Input area fixed at bottom",
+        "Empty state with welcome message",
+        "Proper spacing and padding"
+      ],
+      "steps": [
+        "Create ChatContainer component",
+        "Implement MessageList component",
+        "Create InputArea component",
+        "Add auto-scroll behavior",
+        "Design empty state UI"
+      ],
+      "depends_on": ["main-layout-structure", "chat-state-management"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "message-bubble-component",
+      "name": "Message Bubble Component",
+      "description": "Design and implement message bubbles for user and assistant messages with distinct styling, timestamps, and action buttons.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 84,
+      "acceptance_criteria": [
+        "User messages right-aligned with primary color",
+        "Assistant messages left-aligned with muted background",
+        "Timestamps displayed subtly",
+        "Copy button on hover",
+        "Markdown rendering support"
+      ],
+      "steps": [
+        "Create MessageBubble component",
+        "Style user vs assistant variants",
+        "Add timestamp display",
+        "Implement copy to clipboard",
+        "Add hover action buttons"
+      ],
+      "depends_on": ["chat-interface-container"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "markdown-renderer",
+      "name": "Markdown Message Renderer",
+      "description": "Implement markdown rendering for assistant messages with syntax highlighting for code blocks, proper heading styles, and link handling.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 83,
+      "acceptance_criteria": [
+        "Markdown headings render with proper hierarchy",
+        "Code blocks have syntax highlighting",
+        "Links open in new tab",
+        "Lists and tables render correctly",
+        "Inline code styled appropriately"
+      ],
+      "steps": [
+        "Install react-markdown and syntax highlighter",
+        "Create MarkdownRenderer component",
+        "Configure code block highlighting",
+        "Style markdown elements with theme",
+        "Add copy button to code blocks"
+      ],
+      "depends_on": ["message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "chat-input-component",
+      "name": "Chat Input Component",
+      "description": "Build a polished chat input with auto-resizing textarea, send button, and keyboard shortcuts. Support multiline input and character counter.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 82,
+      "acceptance_criteria": [
+        "Textarea auto-resizes with content",
+        "Send button enabled only when input valid",
+        "Enter sends, Shift+Enter adds newline",
+        "Maximum height with scroll",
+        "Character count display (optional)"
+      ],
+      "steps": [
+        "Create ChatInput component",
+        "Implement auto-resize textarea",
+        "Add send button with loading state",
+        "Configure keyboard shortcuts",
+        "Style for premium appearance"
+      ],
+      "depends_on": ["chat-interface-container"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "chat-completion-endpoint",
+      "name": "Chat Completion API Endpoint",
+      "description": "Implement the main chat completion endpoint that receives messages and returns AI responses. Handle conversation context and system prompts.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 81,
+      "acceptance_criteria": [
+        "POST /api/v1/chat/completions endpoint",
+        "Accepts messages array and parameters",
+        "Returns AI response with token counts",
+        "Handles conversation history",
+        "Proper error responses"
+      ],
+      "steps": [
+        "Create chat completion endpoint",
+        "Parse and validate request body",
+        "Call OpenAI service",
+        "Return structured response",
+        "Add error handling"
+      ],
+      "depends_on": ["openai-client-setup", "api-router-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "streaming-response-support",
+      "name": "Streaming Response Support",
+      "description": "Implement server-sent events (SSE) for streaming AI responses. Update frontend to handle streaming and display tokens as they arrive.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 80,
+      "acceptance_criteria": [
+        "Backend streams tokens via SSE",
+        "Frontend processes stream events",
+        "Partial message displayed as received",
+        "Proper stream completion handling",
+        "Error handling during stream"
+      ],
+      "steps": [
+        "Implement SSE endpoint in FastAPI",
+        "Configure OpenAI streaming",
+        "Create frontend stream handler",
+        "Update MessageBubble for streaming",
+        "Handle stream errors gracefully"
+      ],
+      "depends_on": ["chat-completion-endpoint", "message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "token-counter-display",
+      "name": "Live Token Counter Display",
+      "description": "Display real-time token counts showing tokens sent and received. Update live during streaming to provide connectivity feedback.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 79,
+      "acceptance_criteria": [
+        "Input tokens shown before sending",
+        "Output tokens update during streaming",
+        "Total conversation tokens displayed",
+        "Counter animates on update",
+        "Accessible in header or status bar"
+      ],
+      "steps": [
+        "Create TokenCounter component",
+        "Implement tokenizer for estimation",
+        "Track tokens in chat state",
+        "Add animation on value change",
+        "Position in UI appropriately"
+      ],
+      "depends_on": ["streaming-response-support", "chat-state-management"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "model-selector-component",
+      "name": "Model Selector Component",
+      "description": "Create a dropdown/select component for choosing the AI model. Show available models with descriptions and capabilities.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 78,
+      "acceptance_criteria": [
+        "Dropdown lists available models",
+        "Current model selection persisted",
+        "Model descriptions shown",
+        "Grouped by capability (GPT-4, GPT-3.5, etc.)",
+        "Loading state while fetching models"
+      ],
+      "steps": [
+        "Create ModelSelector component",
+        "Fetch models from backend",
+        "Design dropdown with shadcn Select",
+        "Add model descriptions",
+        "Persist selection in settings"
+      ],
+      "depends_on": ["shadcn-ui-installation", "chat-state-management"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "models-list-endpoint",
+      "name": "Models List API Endpoint",
+      "description": "Create endpoint to fetch available OpenAI models. Include model metadata like context length, capabilities, and pricing tier.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 77,
+      "acceptance_criteria": [
+        "GET /api/v1/models endpoint",
+        "Returns list of available models",
+        "Includes model metadata",
+        "Caches model list appropriately",
+        "Handles API errors gracefully"
+      ],
+      "steps": [
+        "Create models router endpoint",
+        "Fetch models from OpenAI API",
+        "Add metadata enrichment",
+        "Implement caching",
+        "Return structured response"
+      ],
+      "depends_on": ["openai-client-setup", "api-router-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "model-fallback-list",
+      "name": "Model Fallback List",
+      "description": "Maintain a curated fallback list of models with features for cases when API model list is unavailable. Keep list updated with latest models.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 76,
+      "acceptance_criteria": [
+        "JSON file with model definitions",
+        "Includes GPT-4o, GPT-4, GPT-3.5 variants",
+        "Model capabilities marked",
+        "Context lengths specified",
+        "Easy to update and maintain"
+      ],
+      "steps": [
+        "Create models.json config file",
+        "Define model schema",
+        "Add all current OpenAI models",
+        "Include capability flags",
+        "Document update process"
+      ],
+      "depends_on": ["models-list-endpoint"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "temperature-control",
+      "name": "Temperature Parameter Control",
+      "description": "Add slider control for adjusting the temperature parameter with visual feedback and explanation of what it does.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 75,
+      "acceptance_criteria": [
+        "Slider from 0 to 2",
+        "Current value displayed",
+        "Tooltip explains temperature effect",
+        "Value persists across sessions",
+        "Applies to API calls"
+      ],
+      "steps": [
+        "Create TemperatureSlider component",
+        "Use shadcn Slider",
+        "Add value display and tooltip",
+        "Connect to settings state",
+        "Pass to API calls"
+      ],
+      "depends_on": ["model-selector-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "max-tokens-control",
+      "name": "Max Tokens Parameter Control",
+      "description": "Add input control for maximum response tokens with validation and model-aware limits.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 74,
+      "acceptance_criteria": [
+        "Numeric input with validation",
+        "Respects model token limits",
+        "Shows remaining context budget",
+        "Default based on model",
+        "Clear labeling"
+      ],
+      "steps": [
+        "Create MaxTokensInput component",
+        "Add validation logic",
+        "Connect to model context limits",
+        "Add to settings panel",
+        "Test with different models"
+      ],
+      "depends_on": ["model-selector-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "top-p-control",
+      "name": "Top-P (Nucleus) Parameter Control",
+      "description": "Add slider for top_p sampling parameter with explanation of its effect on response diversity.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 73,
+      "acceptance_criteria": [
+        "Slider from 0 to 1",
+        "Tooltip explains top_p",
+        "Works with temperature",
+        "Persists setting",
+        "Applied to API calls"
+      ],
+      "steps": [
+        "Create TopPSlider component",
+        "Add explanation tooltip",
+        "Connect to settings state",
+        "Ensure API integration",
+        "Test effect on responses"
+      ],
+      "depends_on": ["temperature-control"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "frequency-penalty-control",
+      "name": "Frequency Penalty Control",
+      "description": "Add control for frequency_penalty parameter to reduce repetition in responses.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 72,
+      "acceptance_criteria": [
+        "Slider from -2 to 2",
+        "Explanation of effect",
+        "Default value of 0",
+        "Persisted setting",
+        "Applied to completions"
+      ],
+      "steps": [
+        "Create FrequencyPenaltySlider",
+        "Add descriptive tooltip",
+        "Connect to settings",
+        "Include in API payload",
+        "Test response variation"
+      ],
+      "depends_on": ["top-p-control"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "presence-penalty-control",
+      "name": "Presence Penalty Control",
+      "description": "Add control for presence_penalty parameter to encourage topic diversity.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 71,
+      "acceptance_criteria": [
+        "Slider from -2 to 2",
+        "Clear explanation provided",
+        "Works alongside frequency penalty",
+        "Setting persisted",
+        "Included in API calls"
+      ],
+      "steps": [
+        "Create PresencePenaltySlider",
+        "Add tooltip explanation",
+        "Connect to settings state",
+        "Add to API payload",
+        "Verify functionality"
+      ],
+      "depends_on": ["frequency-penalty-control"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "system-prompt-editor",
+      "name": "System Prompt Editor",
+      "description": "Create an editor for customizing the system prompt with templates and presets. Allow saving custom prompts.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 70,
+      "acceptance_criteria": [
+        "Textarea for system prompt",
+        "Preset prompts dropdown",
+        "Save custom prompts",
+        "Clear formatting",
+        "Character count display"
+      ],
+      "steps": [
+        "Create SystemPromptEditor component",
+        "Add preset prompts",
+        "Implement save functionality",
+        "Connect to chat context",
+        "Style appropriately"
+      ],
+      "depends_on": ["chat-state-management"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "settings-panel",
+      "name": "Settings Panel Component",
+      "description": "Create a comprehensive settings panel that houses all parameter controls in an organized, collapsible interface.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 69,
+      "acceptance_criteria": [
+        "Collapsible panel design",
+        "Grouped settings sections",
+        "Reset to defaults button",
+        "Settings persist correctly",
+        "Accessible on all screen sizes"
+      ],
+      "steps": [
+        "Create SettingsPanel component",
+        "Organize controls into sections",
+        "Add collapsible behavior",
+        "Implement reset functionality",
+        "Test responsiveness"
+      ],
+      "depends_on": ["temperature-control", "max-tokens-control", "system-prompt-editor"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-crud-endpoints",
+      "name": "Conversation CRUD Endpoints",
+      "description": "Implement full CRUD operations for conversations: create, read, update (rename), delete, and list.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 68,
+      "acceptance_criteria": [
+        "POST /conversations creates new",
+        "GET /conversations lists all",
+        "GET /conversations/{id} returns one",
+        "PATCH /conversations/{id} updates",
+        "DELETE /conversations/{id} removes"
+      ],
+      "steps": [
+        "Create conversation endpoints",
+        "Implement storage service methods",
+        "Add validation and error handling",
+        "Test all CRUD operations",
+        "Document API endpoints"
+      ],
+      "depends_on": ["storage-abstraction-layer", "conversation-data-models"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-auto-save",
+      "name": "Conversation Auto-Save",
+      "description": "Automatically save conversations after each message exchange. Handle save errors gracefully with retry logic.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 67,
+      "acceptance_criteria": [
+        "Saves after each assistant response",
+        "Debounced to avoid excessive writes",
+        "Error handling with notifications",
+        "Retry on transient failures",
+        "No data loss on app close"
+      ],
+      "steps": [
+        "Implement auto-save hook",
+        "Add debouncing logic",
+        "Handle save errors",
+        "Add retry mechanism",
+        "Test persistence reliability"
+      ],
+      "depends_on": ["conversation-crud-endpoints", "streaming-response-support"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-title-generation",
+      "name": "Automatic Conversation Titles",
+      "description": "Generate meaningful conversation titles automatically from the first user message or use AI to summarize.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 66,
+      "acceptance_criteria": [
+        "Title generated from first message",
+        "Truncated to reasonable length",
+        "Option for AI-generated title",
+        "Manual edit capability",
+        "Updates in sidebar immediately"
+      ],
+      "steps": [
+        "Implement title extraction logic",
+        "Add AI title generation option",
+        "Create title edit UI",
+        "Connect to conversation model",
+        "Update sidebar on change"
+      ],
+      "depends_on": ["conversation-auto-save", "sidebar-navigation"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-delete-confirm",
+      "name": "Conversation Delete Confirmation",
+      "description": "Add confirmation dialog for deleting conversations with clear messaging about permanence.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 65,
+      "acceptance_criteria": [
+        "Confirmation dialog appears",
+        "Clear warning message",
+        "Cancel and confirm buttons",
+        "Keyboard accessible",
+        "Prevents accidental deletion"
+      ],
+      "steps": [
+        "Create DeleteConfirmDialog component",
+        "Wire to delete button in sidebar",
+        "Add keyboard shortcuts",
+        "Style appropriately",
+        "Test flow end-to-end"
+      ],
+      "depends_on": ["sidebar-navigation", "conversation-crud-endpoints"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "theme-toggle-popover",
+      "name": "Theme Toggle Popover",
+      "description": "Create a polished popover component for switching between color themes and light/dark modes with animated transitions.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 64,
+      "acceptance_criteria": [
+        "Popover with color theme selection",
+        "Mode selection (light/dark/system)",
+        "Check marks on current selections",
+        "Click outside closes popover",
+        "Animation on theme switch"
+      ],
+      "steps": [
+        "Create ThemePopover component",
+        "Use useSpacemanTheme hook",
+        "Style with theme colors",
+        "Add check indicators",
+        "Test animation transitions"
+      ],
+      "depends_on": ["theme-provider-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "document-upload-ui",
+      "name": "Document Upload UI",
+      "description": "Create drag-and-drop document upload interface supporting common file types (PDF, TXT, MD, DOCX).",
+      "category": "functional",
+      "status": "pending",
+      "priority": 63,
+      "acceptance_criteria": [
+        "Drag-and-drop zone",
+        "File picker button",
+        "Supported file type validation",
+        "Upload progress indicator",
+        "File preview after upload"
+      ],
+      "steps": [
+        "Create DocumentUpload component",
+        "Implement drag-and-drop handlers",
+        "Add file validation",
+        "Create progress indicator",
+        "Display uploaded files"
+      ],
+      "depends_on": ["chat-input-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "document-upload-endpoint",
+      "name": "Document Upload API Endpoint",
+      "description": "Create backend endpoint for handling document uploads with file validation and text extraction.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 62,
+      "acceptance_criteria": [
+        "POST /api/v1/documents endpoint",
+        "Accepts multipart form data",
+        "Validates file types and sizes",
+        "Extracts text content",
+        "Returns document reference"
+      ],
+      "steps": [
+        "Create document upload endpoint",
+        "Add file type validation",
+        "Implement text extraction",
+        "Store document reference",
+        "Return document metadata"
+      ],
+      "depends_on": ["backend-fastapi-setup", "storage-abstraction-layer"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "document-context-integration",
+      "name": "Document Context Integration",
+      "description": "Integrate uploaded documents into chat context, allowing the AI to reference document content in responses.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 61,
+      "acceptance_criteria": [
+        "Documents included in system context",
+        "AI can reference document content",
+        "Document badges shown in chat",
+        "Clear document option",
+        "Token count includes documents"
+      ],
+      "steps": [
+        "Add documents to message context",
+        "Update system prompt template",
+        "Create document indicator UI",
+        "Implement clear functionality",
+        "Update token counting"
+      ],
+      "depends_on": ["document-upload-endpoint", "chat-completion-endpoint"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "image-generation-ui",
+      "name": "Image Generation UI",
+      "description": "Create interface for DALL-E image generation with prompt input, size selection, and image display.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 60,
+      "acceptance_criteria": [
+        "Image generation toggle/button",
+        "Size selection dropdown",
+        "Quality selection (standard/hd)",
+        "Generated image display",
+        "Download/copy options"
+      ],
+      "steps": [
+        "Create ImageGenerationPanel component",
+        "Add size and quality controls",
+        "Create image display component",
+        "Add download functionality",
+        "Style for integration"
+      ],
+      "depends_on": ["chat-interface-container"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "image-generation-endpoint",
+      "name": "Image Generation API Endpoint",
+      "description": "Create backend endpoint for DALL-E image generation with prompt handling and image URL management.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 59,
+      "acceptance_criteria": [
+        "POST /api/v1/images/generate endpoint",
+        "Accepts prompt, size, quality",
+        "Calls DALL-E API",
+        "Returns image URL",
+        "Handles generation errors"
+      ],
+      "steps": [
+        "Create image generation endpoint",
+        "Configure DALL-E API call",
+        "Handle response and errors",
+        "Return image metadata",
+        "Add rate limiting"
+      ],
+      "depends_on": ["openai-client-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "image-in-chat-display",
+      "name": "Image Display in Chat",
+      "description": "Display generated images inline within the chat conversation with proper sizing and interaction.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 58,
+      "acceptance_criteria": [
+        "Images render in message bubbles",
+        "Responsive image sizing",
+        "Click to expand/lightbox",
+        "Loading placeholder",
+        "Error state handling"
+      ],
+      "steps": [
+        "Update MessageBubble for images",
+        "Create ImageMessage component",
+        "Add lightbox functionality",
+        "Handle loading states",
+        "Style image display"
+      ],
+      "depends_on": ["image-generation-endpoint", "message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "web-search-toggle",
+      "name": "Web Search Toggle",
+      "description": "Add toggle to enable/disable web search capability for responses that require current information.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 57,
+      "acceptance_criteria": [
+        "Toggle switch in settings",
+        "Visual indicator when active",
+        "Tooltip explaining feature",
+        "State persisted",
+        "Passed to API correctly"
+      ],
+      "steps": [
+        "Create WebSearchToggle component",
+        "Add to settings panel",
+        "Connect to API parameters",
+        "Add indicator in chat",
+        "Test with web search queries"
+      ],
+      "depends_on": ["settings-panel"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "web-search-integration",
+      "name": "Web Search API Integration",
+      "description": "Integrate web search capability into chat completions when enabled, allowing AI to access current information.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 56,
+      "acceptance_criteria": [
+        "Web search tool available to model",
+        "Search results included in context",
+        "Citations shown in response",
+        "Clear indication of web data used",
+        "Graceful fallback if search fails"
+      ],
+      "steps": [
+        "Add web search to tools list",
+        "Configure search API integration",
+        "Handle search results in context",
+        "Add citation formatting",
+        "Test search scenarios"
+      ],
+      "depends_on": ["web-search-toggle", "chat-completion-endpoint"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "reasoning-mode-toggle",
+      "name": "Reasoning Mode Toggle",
+      "description": "Add toggle for extended thinking/reasoning mode that shows the AI's reasoning process.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 55,
+      "acceptance_criteria": [
+        "Toggle in settings panel",
+        "Reasoning shown in collapsible section",
+        "Different styling for reasoning text",
+        "Can be expanded/collapsed",
+        "Token count includes reasoning"
+      ],
+      "steps": [
+        "Create ReasoningModeToggle",
+        "Update API to request reasoning",
+        "Create ReasoningDisplay component",
+        "Add collapsible behavior",
+        "Style reasoning differently"
+      ],
+      "depends_on": ["settings-panel"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "reasoning-display",
+      "name": "Reasoning Steps Display",
+      "description": "Display AI reasoning steps in a distinct, collapsible format that doesn't clutter the main response.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 54,
+      "acceptance_criteria": [
+        "Reasoning in collapsible accordion",
+        "Clear visual distinction",
+        "Shows step-by-step process",
+        "Initially collapsed option",
+        "Smooth expand/collapse animation"
+      ],
+      "steps": [
+        "Create ReasoningAccordion component",
+        "Parse reasoning from response",
+        "Style distinctively",
+        "Add animation",
+        "Test with various responses"
+      ],
+      "depends_on": ["reasoning-mode-toggle", "message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "deep-research-mode",
+      "name": "Deep Research Mode",
+      "description": "Implement deep research mode that performs comprehensive multi-step research on complex topics.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 53,
+      "acceptance_criteria": [
+        "Deep research toggle",
+        "Progress indicator during research",
+        "Multi-source synthesis",
+        "Structured research output",
+        "Time estimate shown"
+      ],
+      "steps": [
+        "Create DeepResearchToggle",
+        "Implement research orchestration",
+        "Add progress UI",
+        "Format research results",
+        "Test with research queries"
+      ],
+      "depends_on": ["web-search-integration", "reasoning-mode-toggle"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "pro-mode-toggle",
+      "name": "PRO Mode Toggle",
+      "description": "Add PRO mode that enables advanced features like longer context, better reasoning, and enhanced capabilities.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 52,
+      "acceptance_criteria": [
+        "PRO mode toggle in header",
+        "Visual indicator when active",
+        "Unlocks advanced features",
+        "Model upgrade when available",
+        "Clear feature differentiation"
+      ],
+      "steps": [
+        "Create PROModeToggle component",
+        "Define PRO feature set",
+        "Update API for PRO params",
+        "Add visual differentiation",
+        "Test PRO capabilities"
+      ],
+      "depends_on": ["model-selector-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "tools-function-calling",
+      "name": "Tools/Function Calling Support",
+      "description": "Implement support for OpenAI function calling/tools allowing the AI to use defined tools to complete tasks.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 51,
+      "acceptance_criteria": [
+        "Tool definitions configurable",
+        "Tool calls handled properly",
+        "Tool results fed back to model",
+        "Visual indication of tool use",
+        "Error handling for tool failures"
+      ],
+      "steps": [
+        "Create tools configuration",
+        "Implement tool call handling",
+        "Process tool results",
+        "Add tool usage UI indicators",
+        "Test various tools"
+      ],
+      "depends_on": ["chat-completion-endpoint"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "code-interpreter-tool",
+      "name": "Code Interpreter Tool",
+      "description": "Enable code interpreter tool for executing code and data analysis within conversations.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 50,
+      "acceptance_criteria": [
+        "Code interpreter toggle",
+        "Code execution results shown",
+        "File output handling",
+        "Execution status indicator",
+        "Error display for failed code"
+      ],
+      "steps": [
+        "Enable code interpreter in API",
+        "Handle code execution results",
+        "Display code outputs",
+        "Handle file attachments",
+        "Test code scenarios"
+      ],
+      "depends_on": ["tools-function-calling"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-search",
+      "name": "Conversation Search",
+      "description": "Implement full-text search across all conversations to find previous discussions and information.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 49,
+      "acceptance_criteria": [
+        "Search input in sidebar",
+        "Full-text search across messages",
+        "Results show matching context",
+        "Click result opens conversation",
+        "Highlight matching text"
+      ],
+      "steps": [
+        "Create SearchInput component",
+        "Implement search endpoint",
+        "Display search results",
+        "Add result highlighting",
+        "Navigate to conversation"
+      ],
+      "depends_on": ["sidebar-navigation", "storage-abstraction-layer"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "search-api-endpoint",
+      "name": "Search API Endpoint",
+      "description": "Create backend search endpoint with efficient text search across stored conversations.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 48,
+      "acceptance_criteria": [
+        "GET /api/v1/search endpoint",
+        "Query parameter for search term",
+        "Returns matching conversations",
+        "Includes match context snippets",
+        "Paginated results"
+      ],
+      "steps": [
+        "Create search endpoint",
+        "Implement text search logic",
+        "Extract match context",
+        "Add pagination",
+        "Optimize for performance"
+      ],
+      "depends_on": ["conversation-crud-endpoints"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-export",
+      "name": "Conversation Export",
+      "description": "Allow exporting conversations in various formats (JSON, Markdown, PDF) for backup and sharing.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 47,
+      "acceptance_criteria": [
+        "Export button in conversation menu",
+        "Format selection (JSON, MD, PDF)",
+        "Downloads file with proper name",
+        "Maintains formatting in export",
+        "Batch export option"
+      ],
+      "steps": [
+        "Create export endpoints",
+        "Implement format converters",
+        "Add download functionality",
+        "Create export UI options",
+        "Test all export formats"
+      ],
+      "depends_on": ["conversation-crud-endpoints"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-import",
+      "name": "Conversation Import",
+      "description": "Allow importing conversations from exported files or other compatible formats.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 46,
+      "acceptance_criteria": [
+        "Import button in settings",
+        "Accepts JSON exports",
+        "Validates import format",
+        "Handles duplicates",
+        "Shows import progress"
+      ],
+      "steps": [
+        "Create import endpoint",
+        "Implement format parser",
+        "Add validation logic",
+        "Handle duplicates",
+        "Create import UI"
+      ],
+      "depends_on": ["conversation-export"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "keyboard-shortcuts",
+      "name": "Keyboard Shortcuts",
+      "description": "Implement comprehensive keyboard shortcuts for power users including navigation, actions, and accessibility.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 45,
+      "acceptance_criteria": [
+        "Cmd/Ctrl+N for new chat",
+        "Cmd/Ctrl+K for search",
+        "Arrow keys for navigation",
+        "Escape to close dialogs",
+        "Shortcut help modal (Cmd+/)"
+      ],
+      "steps": [
+        "Create keyboard shortcut system",
+        "Register global shortcuts",
+        "Add shortcut help modal",
+        "Prevent conflicts with inputs",
+        "Test across platforms"
+      ],
+      "depends_on": ["main-layout-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "loading-states",
+      "name": "Loading States and Skeletons",
+      "description": "Implement polished loading states with skeleton screens for all async operations.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 44,
+      "acceptance_criteria": [
+        "Skeleton loaders for sidebar",
+        "Message loading indicator",
+        "Button loading states",
+        "Page transition loading",
+        "Consistent loading design"
+      ],
+      "steps": [
+        "Create Skeleton components",
+        "Add to sidebar list",
+        "Create message loading state",
+        "Add button spinners",
+        "Ensure consistent timing"
+      ],
+      "depends_on": ["shadcn-ui-installation"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "error-handling-ui",
+      "name": "Error Handling UI",
+      "description": "Create comprehensive error handling UI with toast notifications, inline errors, and error boundaries.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 43,
+      "acceptance_criteria": [
+        "Toast notifications for errors",
+        "Inline error messages",
+        "Error boundary for crashes",
+        "Retry actions available",
+        "User-friendly error messages"
+      ],
+      "steps": [
+        "Set up toast system",
+        "Create ErrorBoundary component",
+        "Add inline error displays",
+        "Map API errors to messages",
+        "Add retry functionality"
+      ],
+      "depends_on": ["shadcn-ui-installation"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "empty-states",
+      "name": "Empty State Designs",
+      "description": "Design engaging empty states for no conversations, no search results, and other empty conditions.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 42,
+      "acceptance_criteria": [
+        "Welcome state for new users",
+        "No conversations illustration",
+        "No search results message",
+        "Actionable CTAs in empty states",
+        "Consistent empty state design"
+      ],
+      "steps": [
+        "Design empty state layouts",
+        "Create EmptyState component",
+        "Add illustrations or icons",
+        "Write helpful copy",
+        "Add action buttons"
+      ],
+      "depends_on": ["main-layout-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "responsive-mobile-design",
+      "name": "Responsive Mobile Design",
+      "description": "Optimize the entire application for mobile devices with proper touch targets and mobile-first interactions.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 41,
+      "acceptance_criteria": [
+        "Sidebar slides in on mobile",
+        "Touch-friendly input areas",
+        "Proper viewport handling",
+        "No horizontal scroll",
+        "Works on iOS and Android"
+      ],
+      "steps": [
+        "Add mobile breakpoints",
+        "Create mobile sidebar behavior",
+        "Optimize touch targets",
+        "Test on real devices",
+        "Fix mobile-specific issues"
+      ],
+      "depends_on": ["main-layout-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "message-actions-menu",
+      "name": "Message Actions Menu",
+      "description": "Add context menu or action buttons for messages: copy, regenerate, edit, delete.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 40,
+      "acceptance_criteria": [
+        "Copy message content",
+        "Regenerate AI response",
+        "Edit user messages",
+        "Delete individual messages",
+        "Actions accessible on hover/tap"
+      ],
+      "steps": [
+        "Create MessageActions component",
+        "Implement copy functionality",
+        "Add regenerate logic",
+        "Enable message editing",
+        "Add delete with confirmation"
+      ],
+      "depends_on": ["message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "regenerate-response",
+      "name": "Regenerate Response Feature",
+      "description": "Allow users to regenerate the last AI response with the same or modified parameters.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 39,
+      "acceptance_criteria": [
+        "Regenerate button on AI messages",
+        "Uses current parameters",
+        "Shows loading during regeneration",
+        "Replaces previous response",
+        "Option to keep both versions"
+      ],
+      "steps": [
+        "Add regenerate button to messages",
+        "Implement regeneration logic",
+        "Handle response replacement",
+        "Add version history option",
+        "Test regeneration flow"
+      ],
+      "depends_on": ["message-actions-menu", "streaming-response-support"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "edit-message-feature",
+      "name": "Edit Message Feature",
+      "description": "Allow users to edit previous messages and re-run the conversation from that point.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 38,
+      "acceptance_criteria": [
+        "Edit button on user messages",
+        "Inline editing mode",
+        "Resubmit edited message",
+        "New branch or replace option",
+        "History preserved option"
+      ],
+      "steps": [
+        "Add edit mode to messages",
+        "Create inline editor",
+        "Handle conversation branching",
+        "Implement resubmit logic",
+        "Test edit scenarios"
+      ],
+      "depends_on": ["message-actions-menu"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "typing-indicator",
+      "name": "Typing Indicator",
+      "description": "Show an animated typing indicator while the AI is generating a response.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 37,
+      "acceptance_criteria": [
+        "Animated dots indicator",
+        "Appears in message area",
+        "Disappears when streaming starts",
+        "Smooth transition to response",
+        "Accessible announcement"
+      ],
+      "steps": [
+        "Create TypingIndicator component",
+        "Add animation",
+        "Integrate with chat flow",
+        "Handle transition to response",
+        "Add screen reader support"
+      ],
+      "depends_on": ["message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "stop-generation-button",
+      "name": "Stop Generation Button",
+      "description": "Add ability to stop AI response generation mid-stream.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 36,
+      "acceptance_criteria": [
+        "Stop button visible during generation",
+        "Immediately stops stream",
+        "Partial response preserved",
+        "Clean state after stop",
+        "Visual feedback on stop"
+      ],
+      "steps": [
+        "Add StopButton component",
+        "Implement stream cancellation",
+        "Preserve partial content",
+        "Clean up state properly",
+        "Test interruption scenarios"
+      ],
+      "depends_on": ["streaming-response-support"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-branching",
+      "name": "Conversation Branching",
+      "description": "Support conversation branching when editing messages, allowing multiple conversation paths.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 35,
+      "acceptance_criteria": [
+        "Branch created on edit",
+        "Visual branch indicator",
+        "Switch between branches",
+        "Branch navigation UI",
+        "Branch cleanup option"
+      ],
+      "steps": [
+        "Update conversation model for branches",
+        "Create branch visualization",
+        "Implement branch switching",
+        "Add branch management UI",
+        "Test branching flows"
+      ],
+      "depends_on": ["edit-message-feature"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "favorite-conversations",
+      "name": "Favorite Conversations",
+      "description": "Allow users to star/favorite conversations for quick access.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 34,
+      "acceptance_criteria": [
+        "Star button on conversations",
+        "Favorites section in sidebar",
+        "Persisted across sessions",
+        "Quick filter for favorites",
+        "Visual star indicator"
+      ],
+      "steps": [
+        "Add favorite field to model",
+        "Create star toggle UI",
+        "Add favorites filter",
+        "Update sidebar with section",
+        "Persist favorites"
+      ],
+      "depends_on": ["sidebar-navigation", "conversation-crud-endpoints"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "conversation-folders",
+      "name": "Conversation Folders/Tags",
+      "description": "Allow organizing conversations into folders or with tags for better organization.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 33,
+      "acceptance_criteria": [
+        "Create folders/tags",
+        "Assign conversations to folders",
+        "Filter by folder/tag",
+        "Drag-drop organization",
+        "Folder management UI"
+      ],
+      "steps": [
+        "Add folder model",
+        "Create folder management UI",
+        "Implement assignment logic",
+        "Add folder filter in sidebar",
+        "Enable drag-drop"
+      ],
+      "depends_on": ["favorite-conversations"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "api-key-management",
+      "name": "API Key Management",
+      "description": "Allow users to enter and manage their own OpenAI API key with secure storage.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 32,
+      "acceptance_criteria": [
+        "API key input in settings",
+        "Secure key storage",
+        "Key validation before save",
+        "Masked display of key",
+        "Clear key option"
+      ],
+      "steps": [
+        "Create API key input UI",
+        "Implement secure storage",
+        "Add validation endpoint",
+        "Create masked display",
+        "Test key management flow"
+      ],
+      "depends_on": ["settings-panel"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "usage-tracking",
+      "name": "Usage Tracking Dashboard",
+      "description": "Track and display API usage statistics including token counts, costs, and request history.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 31,
+      "acceptance_criteria": [
+        "Total tokens used display",
+        "Estimated cost calculation",
+        "Usage by model breakdown",
+        "Daily/weekly/monthly views",
+        "Export usage data"
+      ],
+      "steps": [
+        "Create usage tracking model",
+        "Implement tracking in API layer",
+        "Create usage dashboard UI",
+        "Add cost estimation",
+        "Implement data export"
+      ],
+      "depends_on": ["chat-completion-endpoint"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "rate-limiting-ui",
+      "name": "Rate Limiting UI Feedback",
+      "description": "Display helpful feedback when API rate limits are hit with retry countdown.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 30,
+      "acceptance_criteria": [
+        "Rate limit error detection",
+        "User-friendly message",
+        "Countdown to retry",
+        "Auto-retry option",
+        "Prevents spam clicks"
+      ],
+      "steps": [
+        "Detect rate limit errors",
+        "Create RateLimitNotice component",
+        "Implement countdown timer",
+        "Add auto-retry logic",
+        "Disable send during limit"
+      ],
+      "depends_on": ["error-handling-ui"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "premium-ui-polish",
+      "name": "Premium UI Polish",
+      "description": "Apply finishing touches for a premium, professional appearance: micro-interactions, shadows, animations.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 29,
+      "acceptance_criteria": [
+        "Subtle hover effects",
+        "Smooth transitions everywhere",
+        "Consistent shadow usage",
+        "Premium feel typography",
+        "Attention to spacing/alignment"
+      ],
+      "steps": [
+        "Audit all interactions",
+        "Add micro-animations",
+        "Refine shadows and depths",
+        "Perfect typography scale",
+        "Polish spacing throughout"
+      ],
+      "depends_on": ["css-theme-variables", "main-layout-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "accessibility-audit",
+      "name": "Accessibility Audit and Fixes",
+      "description": "Perform comprehensive accessibility audit and fix issues: ARIA labels, keyboard navigation, screen reader support.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 28,
+      "acceptance_criteria": [
+        "All interactive elements focusable",
+        "ARIA labels on icons",
+        "Proper heading hierarchy",
+        "Color contrast compliance",
+        "Screen reader announcements"
+      ],
+      "steps": [
+        "Run automated a11y tests",
+        "Manual keyboard navigation test",
+        "Add missing ARIA labels",
+        "Fix focus management",
+        "Test with screen reader"
+      ],
+      "depends_on": ["main-layout-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "prompt-templates-library",
+      "name": "Prompt Templates Library",
+      "description": "Provide a library of useful prompt templates that users can insert and customize.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 27,
+      "acceptance_criteria": [
+        "Template library UI",
+        "Category organization",
+        "One-click insertion",
+        "Custom template creation",
+        "Template sharing/export"
+      ],
+      "steps": [
+        "Create template data structure",
+        "Build template browser UI",
+        "Implement insertion logic",
+        "Add custom template creation",
+        "Enable import/export"
+      ],
+      "depends_on": ["system-prompt-editor"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "quick-actions",
+      "name": "Quick Actions Bar",
+      "description": "Add quick action buttons above the input for common operations: summarize, translate, explain, etc.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 26,
+      "acceptance_criteria": [
+        "Quick action button row",
+        "Actions: summarize, translate, explain",
+        "Customizable actions",
+        "Works with selected text",
+        "Smooth animation"
+      ],
+      "steps": [
+        "Create QuickActionsBar component",
+        "Define default actions",
+        "Implement action handlers",
+        "Add customization UI",
+        "Integrate with input area"
+      ],
+      "depends_on": ["chat-input-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "voice-input",
+      "name": "Voice Input Support",
+      "description": "Add speech-to-text input capability using browser APIs or Whisper API.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 25,
+      "acceptance_criteria": [
+        "Microphone button in input",
+        "Voice recording indicator",
+        "Transcription to text",
+        "Language detection",
+        "Error handling for permissions"
+      ],
+      "steps": [
+        "Add microphone button",
+        "Implement Web Speech API",
+        "Handle browser permissions",
+        "Display recording state",
+        "Process transcription"
+      ],
+      "depends_on": ["chat-input-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "text-to-speech",
+      "name": "Text-to-Speech Output",
+      "description": "Add ability to have AI responses read aloud using browser or OpenAI TTS API.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 24,
+      "acceptance_criteria": [
+        "Play button on AI messages",
+        "Voice selection option",
+        "Play/pause/stop controls",
+        "Speed adjustment",
+        "Works during streaming"
+      ],
+      "steps": [
+        "Add TTS button to messages",
+        "Implement TTS API integration",
+        "Create audio controls",
+        "Add voice selection",
+        "Handle streaming content"
+      ],
+      "depends_on": ["message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "backend-unit-tests",
+      "name": "Backend Unit Tests",
+      "description": "Write comprehensive unit tests for all backend services, models, and utilities.",
+      "category": "testing",
+      "status": "pending",
+      "priority": 23,
+      "acceptance_criteria": [
+        "Tests for all service methods",
+        "Model validation tests",
+        "Storage provider tests",
+        "80%+ code coverage",
+        "Tests run in CI"
+      ],
+      "steps": [
+        "Set up pytest configuration",
+        "Write service tests",
+        "Write model tests",
+        "Write storage tests",
+        "Configure coverage reporting"
+      ],
+      "depends_on": ["openai-client-setup", "storage-abstraction-layer"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "backend-integration-tests",
+      "name": "Backend Integration Tests",
+      "description": "Write integration tests for API endpoints with realistic scenarios.",
+      "category": "testing",
+      "status": "pending",
+      "priority": 22,
+      "acceptance_criteria": [
+        "Tests for all endpoints",
+        "Request/response validation",
+        "Error scenario coverage",
+        "Database/file cleanup",
+        "Auth testing if applicable"
+      ],
+      "steps": [
+        "Set up test client",
+        "Write endpoint tests",
+        "Add error case tests",
+        "Implement fixtures",
+        "Test full flows"
+      ],
+      "depends_on": ["backend-unit-tests"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "frontend-unit-tests",
+      "name": "Frontend Unit Tests",
+      "description": "Write unit tests for React components and hooks using Vitest and Testing Library.",
+      "category": "testing",
+      "status": "pending",
+      "priority": 21,
+      "acceptance_criteria": [
+        "Tests for key components",
+        "Hook tests",
+        "Snapshot tests for UI",
+        "80%+ coverage",
+        "Tests pass in CI"
+      ],
+      "steps": [
+        "Set up Vitest and Testing Library",
+        "Write component tests",
+        "Write hook tests",
+        "Add snapshot tests",
+        "Configure coverage"
+      ],
+      "depends_on": ["chat-state-management", "message-bubble-component"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "e2e-tests",
+      "name": "End-to-End Tests",
+      "description": "Write E2E tests using Playwright for critical user flows.",
+      "category": "testing",
+      "status": "pending",
+      "priority": 20,
+      "acceptance_criteria": [
+        "New conversation flow",
+        "Message send and receive",
+        "Settings changes",
+        "Theme switching",
+        "Search functionality"
+      ],
+      "steps": [
+        "Set up Playwright",
+        "Write new chat test",
+        "Write message flow test",
+        "Write settings tests",
+        "Add visual regression tests"
+      ],
+      "depends_on": ["frontend-unit-tests", "backend-integration-tests"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "api-documentation",
+      "name": "API Documentation",
+      "description": "Generate comprehensive API documentation with OpenAPI/Swagger and usage examples.",
+      "category": "documentation",
+      "status": "pending",
+      "priority": 19,
+      "acceptance_criteria": [
+        "OpenAPI spec generated",
+        "Swagger UI accessible",
+        "All endpoints documented",
+        "Request/response examples",
+        "Authentication documented"
+      ],
+      "steps": [
+        "Configure OpenAPI in FastAPI",
+        "Add docstrings to endpoints",
+        "Create usage examples",
+        "Set up Swagger UI",
+        "Add auth documentation"
+      ],
+      "depends_on": ["api-router-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "user-documentation",
+      "name": "User Documentation",
+      "description": "Create user-facing documentation explaining features, settings, and common use cases.",
+      "category": "documentation",
+      "status": "pending",
+      "priority": 18,
+      "acceptance_criteria": [
+        "Getting started guide",
+        "Feature explanations",
+        "Settings documentation",
+        "FAQ section",
+        "Troubleshooting guide"
+      ],
+      "steps": [
+        "Write getting started guide",
+        "Document each feature",
+        "Create settings reference",
+        "Compile FAQ",
+        "Add troubleshooting tips"
+      ],
+      "depends_on": [],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "database-storage-implementation",
+      "name": "Database Storage Implementation",
+      "description": "Implement database-backed storage provider using SQLite or PostgreSQL as alternative to file storage.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 17,
+      "acceptance_criteria": [
+        "DatabaseStorageProvider class",
+        "SQLAlchemy models",
+        "Migration support",
+        "Same interface as file storage",
+        "Easy switching between providers"
+      ],
+      "steps": [
+        "Create DatabaseStorageProvider",
+        "Define SQLAlchemy models",
+        "Implement CRUD methods",
+        "Add migration support",
+        "Test interchangeability"
+      ],
+      "depends_on": ["storage-abstraction-layer"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "performance-optimization",
+      "name": "Performance Optimization",
+      "description": "Optimize application performance: bundle size, lazy loading, caching, and rendering efficiency.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 16,
+      "acceptance_criteria": [
+        "Bundle size under 500KB initial",
+        "Lazy loaded routes",
+        "API response caching",
+        "Virtual scrolling for long lists",
+        "Lighthouse score >90"
+      ],
+      "steps": [
+        "Analyze bundle size",
+        "Implement code splitting",
+        "Add API caching",
+        "Optimize list rendering",
+        "Run performance audit"
+      ],
+      "depends_on": ["frontend-react-vite-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "docker-containerization",
+      "name": "Docker Containerization",
+      "description": "Create Docker configuration for easy deployment of both frontend and backend.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 15,
+      "acceptance_criteria": [
+        "Backend Dockerfile",
+        "Frontend Dockerfile",
+        "Docker Compose setup",
+        "Environment configuration",
+        "Production-ready images"
+      ],
+      "steps": [
+        "Create backend Dockerfile",
+        "Create frontend Dockerfile",
+        "Write docker-compose.yml",
+        "Add environment handling",
+        "Test containerized deployment"
+      ],
+      "depends_on": ["backend-fastapi-setup", "frontend-react-vite-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "ci-cd-pipeline",
+      "name": "CI/CD Pipeline Setup",
+      "description": "Set up continuous integration and deployment pipeline with GitHub Actions.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 14,
+      "acceptance_criteria": [
+        "Tests run on PR",
+        "Lint checks in CI",
+        "Build verification",
+        "Automated deployment option",
+        "Status badges in README"
+      ],
+      "steps": [
+        "Create GitHub Actions workflows",
+        "Add test job",
+        "Add lint job",
+        "Add build job",
+        "Configure deployment"
+      ],
+      "depends_on": ["backend-unit-tests", "frontend-unit-tests"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "environment-configuration",
+      "name": "Environment Configuration",
+      "description": "Set up comprehensive environment configuration for development, staging, and production.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 13,
+      "acceptance_criteria": [
+        ".env.example with all vars",
+        "Development defaults",
+        "Production security settings",
+        "Configuration validation",
+        "Documentation of all vars"
+      ],
+      "steps": [
+        "Create .env.example",
+        "Document all variables",
+        "Add validation logic",
+        "Create per-environment configs",
+        "Test in all environments"
+      ],
+      "depends_on": ["backend-fastapi-setup", "frontend-react-vite-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "security-audit",
+      "name": "Security Audit",
+      "description": "Perform security audit covering API security, XSS prevention, CSRF, and secure storage.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 12,
+      "acceptance_criteria": [
+        "No XSS vulnerabilities",
+        "CSRF protection if needed",
+        "Secure headers configured",
+        "Input validation complete",
+        "Secrets not exposed"
+      ],
+      "steps": [
+        "Review API security",
+        "Check XSS prevention",
+        "Verify input validation",
+        "Audit secret handling",
+        "Test security headers"
+      ],
+      "depends_on": ["backend-fastapi-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "logging-monitoring",
+      "name": "Logging and Monitoring Setup",
+      "description": "Set up structured logging and basic monitoring for production operations.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 11,
+      "acceptance_criteria": [
+        "Structured JSON logging",
+        "Log levels configurable",
+        "Request/response logging",
+        "Error tracking setup",
+        "Basic health monitoring"
+      ],
+      "steps": [
+        "Configure logging framework",
+        "Add request logging middleware",
+        "Set up error tracking",
+        "Create health endpoints",
+        "Document monitoring"
+      ],
+      "depends_on": ["backend-fastapi-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "share-conversation",
+      "name": "Share Conversation Feature",
+      "description": "Allow users to share conversations via link or export for collaboration.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 10,
+      "acceptance_criteria": [
+        "Share button in conversation",
+        "Generate shareable link",
+        "View-only shared mode",
+        "Expiration option",
+        "Copy link functionality"
+      ],
+      "steps": [
+        "Create share endpoint",
+        "Generate unique share tokens",
+        "Build shared view page",
+        "Add expiration handling",
+        "Create share UI"
+      ],
+      "depends_on": ["conversation-crud-endpoints"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "multi-language-ui",
+      "name": "Multi-Language UI Support",
+      "description": "Add internationalization support for the UI with initial languages: English, Spanish, French.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 9,
+      "acceptance_criteria": [
+        "i18n framework setup",
+        "English strings extracted",
+        "Language selector in settings",
+        "RTL support foundation",
+        "Translation workflow documented"
+      ],
+      "steps": [
+        "Install i18n library",
+        "Extract strings to files",
+        "Create language selector",
+        "Add initial translations",
+        "Document translation process"
+      ],
+      "depends_on": ["settings-panel"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "notification-system",
+      "name": "Notification System",
+      "description": "Implement a notification system for alerts, tips, and system messages.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 8,
+      "acceptance_criteria": [
+        "Notification center UI",
+        "Different notification types",
+        "Persistence across sessions",
+        "Mark as read functionality",
+        "Clear all option"
+      ],
+      "steps": [
+        "Create notification store",
+        "Build notification center UI",
+        "Implement notification types",
+        "Add persistence",
+        "Create notification triggers"
+      ],
+      "depends_on": ["main-layout-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "onboarding-tour",
+      "name": "Onboarding Tour",
+      "description": "Create an interactive onboarding tour for new users highlighting key features.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 7,
+      "acceptance_criteria": [
+        "Step-by-step tour",
+        "Highlight key features",
+        "Skip option",
+        "Progress indicator",
+        "Only shows once"
+      ],
+      "steps": [
+        "Choose tour library",
+        "Define tour steps",
+        "Create tour content",
+        "Add skip/complete logic",
+        "Track tour completion"
+      ],
+      "depends_on": ["main-layout-structure"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "data-privacy-controls",
+      "name": "Data Privacy Controls",
+      "description": "Add data privacy controls: clear all data, data export, privacy settings.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 6,
+      "acceptance_criteria": [
+        "Clear all data option",
+        "Export personal data",
+        "Privacy policy link",
+        "Telemetry opt-out if applicable",
+        "Data retention controls"
+      ],
+      "steps": [
+        "Create privacy settings section",
+        "Implement data clearing",
+        "Add data export feature",
+        "Document data handling",
+        "Test data removal"
+      ],
+      "depends_on": ["settings-panel"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "custom-theme-creator",
+      "name": "Custom Theme Creator",
+      "description": "Allow users to create and save custom color themes beyond the built-in options.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 5,
+      "acceptance_criteria": [
+        "Color picker for each variable",
+        "Live preview",
+        "Save custom themes",
+        "Export/import themes",
+        "Share themes option"
+      ],
+      "steps": [
+        "Create theme editor UI",
+        "Add color pickers",
+        "Implement live preview",
+        "Add save functionality",
+        "Enable theme sharing"
+      ],
+      "depends_on": ["theme-toggle-popover"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "plugin-system-foundation",
+      "name": "Plugin System Foundation",
+      "description": "Create foundation for a plugin system allowing future extensibility.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 4,
+      "acceptance_criteria": [
+        "Plugin interface defined",
+        "Plugin loading mechanism",
+        "Plugin lifecycle hooks",
+        "Example plugin created",
+        "Documentation for plugin dev"
+      ],
+      "steps": [
+        "Design plugin interface",
+        "Create plugin loader",
+        "Define lifecycle hooks",
+        "Build example plugin",
+        "Document plugin development"
+      ],
+      "depends_on": ["backend-fastapi-setup"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "analytics-integration",
+      "name": "Analytics Integration",
+      "description": "Add privacy-respecting analytics to understand usage patterns.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 3,
+      "acceptance_criteria": [
+        "Anonymous usage tracking",
+        "Feature usage metrics",
+        "Error tracking",
+        "Opt-out option",
+        "No PII collected"
+      ],
+      "steps": [
+        "Choose analytics solution",
+        "Implement tracking",
+        "Add opt-out control",
+        "Set up dashboard",
+        "Document data collected"
+      ],
+      "depends_on": ["data-privacy-controls"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "offline-mode",
+      "name": "Offline Mode Support",
+      "description": "Add basic offline support allowing access to conversation history without internet.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 2,
+      "acceptance_criteria": [
+        "Service worker setup",
+        "Cached conversations accessible",
+        "Offline indicator",
+        "Graceful degradation",
+        "Sync when back online"
+      ],
+      "steps": [
+        "Set up service worker",
+        "Cache conversation data",
+        "Add offline detection",
+        "Create offline UI state",
+        "Implement sync logic"
+      ],
+      "depends_on": ["conversation-auto-save"],
+      "sessions_spent": 0,
+      "source": "generated"
+    },
+    {
+      "id": "pwa-support",
+      "name": "PWA Support",
+      "description": "Convert the application to a Progressive Web App for installability.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 1,
+      "acceptance_criteria": [
+        "Web manifest configured",
+        "Icons for all sizes",
+        "Install prompt works",
+        "App appears in app drawer",
+        "Standalone window mode"
+      ],
+      "steps": [
+        "Create web manifest",
+        "Generate app icons",
+        "Configure service worker for PWA",
+        "Add install prompt",
+        "Test installation"
+      ],
+      "depends_on": ["offline-mode"],
+      "sessions_spent": 0,
+      "source": "generated"
+    }
+  ],
+  "created_at": "2025-01-19T00:00:00",
+  "last_updated": "2025-01-19T00:00:00"
+}

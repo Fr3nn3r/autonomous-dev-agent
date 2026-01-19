@@ -1,0 +1,14 @@
+I want a fully featured AI chatbot with python backend and react front-end (shadcn). 
+The user must be able to configure any of the availablee models
+The App must support only openAI
+All regular playground parameters must be supported,
+documents, reasoning, deep research, PRO mode, image generation, websearch, tools, all must be supported assuming it is supported by the python API
+All conversations must be stored for future use and retrieval
+the app must display live the number of token sent and recieved by the app to provide a sense of connectiveness to the user
+the app must support multiple themes and light/dark modes
+the app mus be able to list out all the models available dynamically (if available through API) or maintain an updated list of features
+the backend must use filebased storage but the storage layer must use an abstraction so that a DB persisitence implementation can be created later.
+the developement must take particular care to make the app design look and feel premium and professional.
+there must be a search for data from previous conversations
+the developers must try to deliver above and beyond the product's owners expectations by adding features that are likely required but not necessarily requiested.
+Apply these guidelines to implement UI themeing: C:\Users\fbrun\Documents\GitHub\autonomous-dev-agent\docs\theming-standalone.md
