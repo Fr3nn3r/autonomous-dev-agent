@@ -7,14 +7,35 @@ Analyze the application specification below and generate a comprehensive, implem
 ## Key Principles
 
 1. **Foundational First**: Order features so infrastructure and foundational features come before features that depend on them
-2. **Discrete Units**: Each feature should be a single, testable unit of work (typically completable in one coding session)
+2. **Meaningful Deliverables**: Each feature should be a complete, demoable unit of functionality—not just a code change
 3. **Clear Boundaries**: Features should have clear start and end points with explicit acceptance criteria
 4. **Test-Driven**: Include verification steps that can be tested programmatically where possible
 5. **Dependency Aware**: Explicitly declare dependencies between features
 
+## Feature Scoping Guidelines
+
+**The Right Size**: A well-scoped feature is one that:
+- Can be completed in a single coding session (typically 30-60 minutes of agent work)
+- Produces a visible or testable outcome when complete
+- Makes sense to demo or describe independently ("We added X")
+- Has 3-6 acceptance criteria
+
+**Avoid Fragmentation**: Do NOT create separate features for:
+- A UI component and its corresponding API endpoint (combine them)
+- Multiple similar controls (e.g., 5 slider parameters → 1 "Parameter Controls" feature)
+- Toggle + integration (a toggle without its integration is useless)
+- Import + export (these are typically implemented together)
+- Tightly coupled setup steps (e.g., CSS variables + Tailwind config + theme provider → 1 "Theme System" feature)
+
+**When to Split**: Only split features when:
+- They can genuinely be delivered and tested independently
+- They have different priorities or could be deferred separately
+- They touch completely different parts of the codebase
+
 ## Requirements
 
-- Generate between {min_features} and {max_features} features
+- Generate an appropriate number of features for the project scope (typically 40-80 for a full application)
+- The {min_features}-{max_features} range is a guideline, not a target—prioritize proper scoping over hitting a number
 - Ensure every feature has clear acceptance criteria
 - Use priority scores: 100 (critical/foundational) down to 0 (optional enhancements)
 - Categories help organize work: infrastructure first, then functional features, then testing/docs
@@ -78,48 +99,59 @@ Return a JSON array of features. Each feature MUST include:
     "depends_on": []
   }},
   {{
-    "id": "database-schema",
-    "name": "Database Schema Design",
-    "description": "Design and implement the database schema with all required tables, relationships, and indexes. Use migrations for version control.",
+    "id": "theme-system",
+    "name": "Theme System with Dark/Light Mode",
+    "description": "Implement complete theming infrastructure including CSS variables, Tailwind configuration, theme provider, and toggle UI. Supports light/dark modes with smooth transitions.",
     "category": "infrastructure",
-    "priority": 95,
+    "priority": 90,
     "acceptance_criteria": [
-      "All tables defined with appropriate columns",
-      "Foreign key relationships established",
-      "Indexes created for frequently queried columns",
-      "Migrations run successfully"
+      "CSS variables defined for all color tokens",
+      "Tailwind configured to use CSS variables",
+      "Theme provider wraps application with context",
+      "Theme toggle UI allows switching modes",
+      "Theme preference persists in localStorage",
+      "Smooth transition animation on theme change"
     ],
     "steps": [
-      "Create migration files for each table",
-      "Define relationships between entities",
-      "Add appropriate indexes",
-      "Run migrations and verify schema"
+      "Define CSS custom properties for light and dark themes",
+      "Configure Tailwind to reference CSS variables",
+      "Create ThemeProvider component with React context",
+      "Build theme toggle component",
+      "Add localStorage persistence"
     ],
     "depends_on": ["project-setup"]
   }},
   {{
-    "id": "user-authentication",
-    "name": "User Authentication System",
-    "description": "Implement user registration, login, and session management with secure password hashing and JWT tokens.",
+    "id": "document-upload",
+    "name": "Document Upload and Context Integration",
+    "description": "Allow users to upload documents (PDF, TXT, MD) that are processed and made available as context for AI conversations. Includes upload UI, backend processing, and chat integration.",
     "category": "functional",
-    "priority": 85,
+    "priority": 70,
     "acceptance_criteria": [
-      "Users can register with email and password",
-      "Users can log in and receive JWT token",
-      "Passwords are securely hashed",
-      "Protected routes require valid token"
+      "Drag-and-drop upload UI with file type validation",
+      "Backend endpoint processes uploads and extracts text",
+      "Uploaded documents shown as badges in chat",
+      "Document content included in AI context",
+      "Users can remove documents from context"
     ],
-    "steps": [
-      "Create user model with password hashing",
-      "Implement registration endpoint",
-      "Implement login endpoint with JWT generation",
-      "Create authentication middleware",
-      "Add tests for auth flows"
-    ],
-    "depends_on": ["database-schema"]
+    "depends_on": ["chat-interface", "api-foundation"]
   }}
 ]
 ```
+
+## Anti-Pattern Examples (Do NOT generate like this)
+
+**Too Fragmented** - These should be ONE feature:
+- ❌ "Temperature Slider Control" + "Max Tokens Input" + "Top-P Slider" + "Frequency Penalty Slider"
+- ✅ "Model Parameter Controls" (all sliders in one feature)
+
+**Incomplete Without Pair** - These must be combined:
+- ❌ "Document Upload UI" (no backend) + "Document Upload Endpoint" (no UI) + "Document Context Integration"
+- ✅ "Document Upload and Context Integration" (complete end-to-end feature)
+
+**Arbitrary Split** - Configuration that belongs together:
+- ❌ "CSS Theme Variables" + "Tailwind Theme Config" + "Theme Provider Setup"
+- ✅ "Theme System" (all configuration in one coherent feature)
 
 ---
 

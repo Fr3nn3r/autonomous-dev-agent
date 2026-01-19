@@ -131,6 +131,24 @@ Prompts are stored as `.md` files in `src/autonomous_dev_agent/prompts/` for edi
 
 **Custom prompts**: Place in `.ada/prompts/{name}.md` to override package defaults.
 
+## Feature Scoping Best Practices
+
+When generating backlogs (via `ada generate-backlog` or `ada init --spec`), feature count parameters (`--min-features`, `--max-features`) are **guidelines, not targets**. Prioritize proper scoping over hitting a specific number.
+
+**Well-scoped features:**
+- Complete, demoable units of functionality (not just code changes)
+- Completable in one coding session (30-60 min agent work)
+- 3-6 acceptance criteria
+
+**Avoid fragmentation:**
+- Don't separate UI from its API endpoint
+- Don't create individual features for similar controls (e.g., multiple sliders → one "Parameter Controls" feature)
+- Don't split tightly-coupled config (e.g., CSS variables + Tailwind config + theme provider → one "Theme System" feature)
+
+**When to split:** Only when features can genuinely be delivered/tested independently and have different priorities.
+
+See `src/autonomous_dev_agent/prompts/generate_backlog.md` for full scoping guidelines.
+
 ## Configuration
 
 **HarnessConfig** options (models.py):
