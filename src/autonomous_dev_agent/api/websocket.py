@@ -91,13 +91,13 @@ async def websocket_events(websocket: WebSocket):
     """
     await manager.connect(websocket)
 
-    # Send initial connection confirmation
-    await manager.send_personal(websocket, "connected", {
-        "message": "Connected to ADA Dashboard events",
-        "client_count": len(manager.active_connections)
-    })
-
     try:
+        # Send initial connection confirmation
+        await manager.send_personal(websocket, "connected", {
+            "message": "Connected to ADA Dashboard events",
+            "client_count": len(manager.active_connections)
+        })
+
         while True:
             # Keep connection alive and handle client messages
             data = await websocket.receive_text()
@@ -121,6 +121,8 @@ async def websocket_events(websocket: WebSocket):
                 pass
 
     except WebSocketDisconnect:
+        pass
+    finally:
         manager.disconnect(websocket)
 
 
