@@ -376,12 +376,12 @@ class AutonomousHarness:
     def _load_prompt_template(self, name: str) -> str:
         """Load a prompt template from the prompts directory."""
         # First check project-local prompts
-        local_prompts = self.project_path / ".ada" / "prompts" / f"{name}.txt"
+        local_prompts = self.project_path / ".ada" / "prompts" / f"{name}.md"
         if local_prompts.exists():
             return local_prompts.read_text()
 
         # Fall back to package prompts
-        package_prompts = Path(__file__).parent / "prompts" / f"{name}.txt"
+        package_prompts = Path(__file__).parent / "prompts" / f"{name}.md"
         if package_prompts.exists():
             return package_prompts.read_text()
 

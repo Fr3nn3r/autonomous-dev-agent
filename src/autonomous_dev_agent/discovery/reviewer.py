@@ -42,8 +42,8 @@ def get_review_prompt() -> str:
     """
     # Try to load custom prompt from prompts directory
     prompt_paths = [
-        Path(__file__).parent.parent / "prompts" / "discovery_review.txt",
-        Path(__file__).parent.parent.parent.parent / ".ada" / "prompts" / "discovery_review.txt",
+        Path(__file__).parent.parent / "prompts" / "discovery_review.md",
+        Path(__file__).parent.parent.parent.parent / ".ada" / "prompts" / "discovery_review.md",
     ]
 
     for prompt_path in prompt_paths:

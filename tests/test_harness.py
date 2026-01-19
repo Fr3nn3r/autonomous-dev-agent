@@ -385,7 +385,7 @@ class TestPromptTemplateLoading:
         assert local_prompts.exists()  # Should already exist
 
         custom_template = "Custom template for {feature_name}"
-        (local_prompts / "coding.txt").write_text(custom_template)
+        (local_prompts / "coding.md").write_text(custom_template)
 
         template = harness._load_prompt_template("coding")
         assert template == custom_template

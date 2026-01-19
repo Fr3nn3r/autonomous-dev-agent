@@ -79,8 +79,8 @@ def get_requirements_prompt() -> str:
     """
     # Try to load custom prompt
     prompt_paths = [
-        Path(__file__).parent.parent / "prompts" / "discovery_requirements.txt",
-        Path(__file__).parent.parent.parent.parent / ".ada" / "prompts" / "discovery_requirements.txt",
+        Path(__file__).parent.parent / "prompts" / "discovery_requirements.md",
+        Path(__file__).parent.parent.parent.parent / ".ada" / "prompts" / "discovery_requirements.md",
     ]
 
     for prompt_path in prompt_paths:

@@ -62,7 +62,7 @@ def get_prompt_template() -> str:
     """
     # Check for custom prompt in prompts directory
     prompt_paths = [
-        Path(__file__).parent.parent / "prompts" / "generate_backlog.txt",
+        Path(__file__).parent.parent / "prompts" / "generate_backlog.md",
     ]
 
     for prompt_path in prompt_paths:
