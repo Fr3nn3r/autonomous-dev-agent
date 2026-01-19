@@ -21,9 +21,6 @@ export interface UseWebSocketOptions {
 
 export function useWebSocket(options: UseWebSocketOptions = {}) {
   const {
-    onConnect,
-    onDisconnect,
-    onEvent,
     reconnectInterval = 3000,
   } = options
 
@@ -31,9 +28,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   const [lastEvent, setLastEvent] = useState<WebSocketEvent | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const reconnectTimeoutRef = useRef<number | null>(null)
+  const mountedRef = useRef(true)
+
+  // Use refs for callbacks to avoid reconnection loops
+  const onConnectRef = useRef(options.onConnect)
+  const onDisconnectRef = useRef(options.onDisconnect)
+  const onEventRef = useRef(options.onEvent)
+
+  // Keep refs up to date
+  useEffect(() => {
+    onConnectRef.current = options.onConnect
+    onDisconnectRef.current = options.onDisconnect
+    onEventRef.current = options.onEvent
+  })
 
   const connect = useCallback(() => {
+    if (!mountedRef.current) return
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      return
+    }
+    if (wsRef.current?.readyState === WebSocket.CONNECTING) {
       return
     }
 
@@ -41,18 +55,26 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       const ws = new WebSocket(WS_URL)
 
       ws.onopen = () => {
+        if (!mountedRef.current) {
+          ws.close()
+          return
+        }
         setIsConnected(true)
-        onConnect?.()
+        onConnectRef.current?.()
       }
 
       ws.onclose = () => {
+        if (!mountedRef.current) return
         setIsConnected(false)
-        onDisconnect?.()
+        wsRef.current = null
+        onDisconnectRef.current?.()
 
         // Attempt to reconnect
-        reconnectTimeoutRef.current = window.setTimeout(() => {
-          connect()
-        }, reconnectInterval)
+        if (mountedRef.current) {
+          reconnectTimeoutRef.current = window.setTimeout(() => {
+            connect()
+          }, reconnectInterval)
+        }
       }
 
       ws.onerror = (error) => {
@@ -63,7 +85,7 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         try {
           const data = JSON.parse(event.data) as WebSocketEvent
           setLastEvent(data)
-          onEvent?.(data)
+          onEventRef.current?.(data)
         } catch (e) {
           console.error('Failed to parse WebSocket message:', e)
         }
@@ -74,11 +96,13 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
       console.error('Failed to connect WebSocket:', error)
 
       // Attempt to reconnect
-      reconnectTimeoutRef.current = window.setTimeout(() => {
-        connect()
-      }, reconnectInterval)
+      if (mountedRef.current) {
+        reconnectTimeoutRef.current = window.setTimeout(() => {
+          connect()
+        }, reconnectInterval)
+      }
     }
-  }, [onConnect, onDisconnect, onEvent, reconnectInterval])
+  }, [reconnectInterval])
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -103,16 +127,19 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
   }, [sendMessage])
 
   useEffect(() => {
+    mountedRef.current = true
     connect()
 
     // Set up ping interval to keep connection alive
     const pingInterval = setInterval(ping, 30000)
 
     return () => {
+      mountedRef.current = false
       clearInterval(pingInterval)
       disconnect()
     }
-  }, [connect, disconnect, ping])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Empty deps - only run on mount/unmount
 
   return {
     isConnected,
@@ -125,19 +152,29 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
 }
 
 /**
- * Subscribe to specific event types
+ * Subscribe to specific event types.
+ * Note: This hook should only be used within a component that also uses
+ * useWebSocket, or within a WebSocket context provider. Each call to
+ * useWebSocket creates a new connection.
  */
 export function useWebSocketEvent(
   eventType: string,
-  callback: (data: Record<string, unknown>) => void
+  callback: (data: Record<string, unknown>) => void,
+  webSocketHook?: ReturnType<typeof useWebSocket>
 ) {
-  const { lastEvent } = useWebSocket()
+  const internalWs = useWebSocket()
+  const ws = webSocketHook ?? internalWs
+  const callbackRef = useRef(callback)
 
   useEffect(() => {
-    if (lastEvent?.event === eventType) {
-      callback(lastEvent.data)
+    callbackRef.current = callback
+  })
+
+  useEffect(() => {
+    if (ws.lastEvent?.event === eventType) {
+      callbackRef.current(ws.lastEvent.data)
     }
-  }, [lastEvent, eventType, callback])
+  }, [ws.lastEvent, eventType])
 }
 
 export default useWebSocket
