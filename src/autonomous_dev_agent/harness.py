@@ -22,6 +22,7 @@ from typing import Optional, List, Tuple
 from rich.console import Console
 from rich.panel import Panel
 
+from .cli_utils import find_claude_executable
 from .models import (
     Backlog, Feature, FeatureStatus, HarnessConfig,
     ProgressEntry, ErrorCategory
@@ -182,15 +183,15 @@ class AutonomousHarness:
                     f"{len(git_status.untracked_files)} untracked"
                 )
 
-        # 2. Check Claude CLI
-        claude_path = shutil.which("claude")
-        if not claude_path and sys.platform == "win32":
-            claude_path = shutil.which("claude.cmd")
-
+        # 2. Check Claude CLI using robust cross-platform discovery
+        claude_path = find_claude_executable()
         if claude_path:
             console.print(f"  [green]{SYM_OK}[/green] Claude CLI found: {claude_path}")
         else:
-            errors.append("Claude CLI not found in PATH")
+            errors.append(
+                "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code\n"
+                "           After installing, restart your terminal for PATH changes to take effect."
+            )
 
         # 3. Check backlog file exists and is valid
         backlog_path = self.project_path / self.config.backlog_file

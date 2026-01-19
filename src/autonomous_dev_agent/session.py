@@ -27,6 +27,7 @@ from typing import Optional, Callable, Any, List
 
 from pydantic import BaseModel
 
+from .cli_utils import find_claude_executable
 from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory, UsageStats
 from .cost_tracker import CostTracker
 
@@ -330,46 +331,6 @@ class CLISession(BaseSession):
     - Graceful handling of blocking scenarios
     """
 
-    def _find_claude_executable(self) -> Optional[str]:
-        """Find the claude CLI executable.
-
-        On Windows, npm installs as .cmd files which need special handling.
-        Also checks common installation locations.
-        """
-        # Try shutil.which first (respects PATH)
-        claude_path = shutil.which("claude")
-        if claude_path:
-            return claude_path
-
-        # On Windows, try .cmd extension
-        if sys.platform == "win32":
-            claude_path = shutil.which("claude.cmd")
-            if claude_path:
-                return claude_path
-
-            # Check common npm global locations on Windows
-            npm_paths = [
-                Path(os.environ.get("APPDATA", "")) / "npm" / "claude.cmd",
-                Path(os.environ.get("LOCALAPPDATA", "")) / "npm" / "claude.cmd",
-                Path.home() / "AppData" / "Roaming" / "npm" / "claude.cmd",
-            ]
-            for p in npm_paths:
-                if p.exists():
-                    return str(p)
-
-        # On Unix, check common locations
-        else:
-            unix_paths = [
-                Path.home() / ".npm-global" / "bin" / "claude",
-                Path("/usr/local/bin/claude"),
-                Path.home() / ".local" / "bin" / "claude",
-            ]
-            for p in unix_paths:
-                if p.exists():
-                    return str(p)
-
-        return None
-
     async def _run_session(
         self,
         prompt: str,
@@ -382,10 +343,13 @@ class CLISession(BaseSession):
             context_usage_percent=0.0
         )
 
-        # Find the claude executable
-        claude_path = self._find_claude_executable()
+        # Find the claude executable using robust cross-platform discovery
+        claude_path = find_claude_executable()
         if not claude_path:
-            result.error_message = "Claude CLI not found. Make sure 'claude' is installed and in PATH."
+            result.error_message = (
+                "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code\n"
+                "After installing, you may need to restart your terminal for PATH changes to take effect."
+            )
             print(f"\n[ERROR] {result.error_message}")
             return result
 

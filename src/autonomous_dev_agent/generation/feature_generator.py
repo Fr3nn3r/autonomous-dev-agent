@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
+from ..cli_utils import get_claude_executable
 from ..models import (
     Backlog,
     Feature,
@@ -21,7 +22,7 @@ from .spec_parser import ParsedSpec, SpecParser
 
 
 # Default model for feature generation
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_MODEL = "claude-opus-4-20250514"
 
 # Default feature count limits
 DEFAULT_MIN_FEATURES = 20
@@ -248,18 +249,23 @@ class FeatureGenerator:
             RuntimeError: If Claude CLI is not available or times out.
         """
         try:
+            # Find Claude executable using robust cross-platform discovery
+            claude_exe = get_claude_executable()
+
             # Use Claude CLI in print mode (non-interactive)
+            # Pass prompt via stdin to avoid Windows command line length limits
             result = subprocess.run(
                 [
-                    "claude",
+                    claude_exe,
                     "--print",
                     "--model", self.model,
                     "--max-turns", "1",
-                    prompt,
+                    "-p", "-",  # Read prompt from stdin
                 ],
+                input=prompt,
                 capture_output=True,
                 text=True,
-                timeout=180,  # 3 minute timeout for generation
+                timeout=300,  # 5 minute timeout for generation (Opus can be slow)
             )
 
             if result.returncode == 0:
@@ -269,11 +275,9 @@ class FeatureGenerator:
                 raise RuntimeError(f"Claude CLI failed: {error_msg}")
 
         except subprocess.TimeoutExpired:
-            raise RuntimeError("Claude CLI timed out after 3 minutes")
-        except FileNotFoundError:
-            raise RuntimeError(
-                "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code"
-            )
+            raise RuntimeError("Claude CLI timed out after 5 minutes")
+        except FileNotFoundError as e:
+            raise RuntimeError(str(e))
 
     def _parse_response(self, response: str) -> list[Feature]:
         """Parse Claude's response into Feature objects.

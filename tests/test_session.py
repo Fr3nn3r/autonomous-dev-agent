@@ -242,24 +242,29 @@ class TestCLISession:
         assert session.context_usage_percent == 0.0
 
     def test_find_claude_executable_returns_path(self, tmp_path):
-        """Should find claude executable when available."""
-        config = HarnessConfig()
-        session = CLISession(config, tmp_path)
-
-        with patch('shutil.which') as mock_which:
+        """Should find claude executable when available via shared utility."""
+        with patch('autonomous_dev_agent.cli_utils.shutil.which') as mock_which:
             mock_which.return_value = "/usr/local/bin/claude"
-            result = session._find_claude_executable()
+            from autonomous_dev_agent.cli_utils import find_claude_executable
+            result = find_claude_executable()
             assert result == "/usr/local/bin/claude"
 
     def test_find_claude_executable_returns_none_when_missing(self, tmp_path):
-        """Should return None when claude not found."""
-        config = HarnessConfig()
-        session = CLISession(config, tmp_path)
+        """Should return None when claude not found via shared utility."""
+        # Patch at the module level to ensure complete isolation
+        with patch('autonomous_dev_agent.cli_utils.shutil.which', return_value=None):
+            with patch('autonomous_dev_agent.cli_utils.os.environ.get', return_value=""):
+                with patch('autonomous_dev_agent.cli_utils.Path') as mock_path_class:
+                    # Make Path.home() and all path operations return non-existent paths
+                    mock_path = MagicMock()
+                    mock_path.exists.return_value = False
+                    mock_path.__truediv__ = lambda self, other: mock_path
+                    mock_path_class.return_value = mock_path
+                    mock_path_class.home.return_value = mock_path
 
-        with patch('shutil.which', return_value=None):
-            with patch('pathlib.Path.exists', return_value=False):
-                result = session._find_claude_executable()
-                assert result is None
+                    from autonomous_dev_agent.cli_utils import find_claude_executable
+                    result = find_claude_executable()
+                    assert result is None
 
     @pytest.mark.asyncio
     async def test_run_session_fails_without_claude(self, tmp_path):
@@ -267,7 +272,7 @@ class TestCLISession:
         config = HarnessConfig(session_mode=SessionMode.CLI)
         session = CLISession(config, tmp_path)
 
-        with patch.object(session, '_find_claude_executable', return_value=None):
+        with patch('autonomous_dev_agent.session.find_claude_executable', return_value=None):
             result = await session._run_session("test prompt")
 
             assert result.success is False

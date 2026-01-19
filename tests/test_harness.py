@@ -480,7 +480,7 @@ class TestHealthChecks:
     @pytest.mark.asyncio
     async def test_health_checks_fail_no_claude(self, harness):
         """Should fail when claude CLI not found."""
-        with patch('shutil.which', return_value=None):
+        with patch('autonomous_dev_agent.harness.find_claude_executable', return_value=None):
             with patch.object(harness.git, 'is_git_repo', return_value=True):
                 with patch.object(harness.git, 'get_status') as mock_status:
                     mock_status.return_value = Mock(has_changes=False)
@@ -492,7 +492,7 @@ class TestHealthChecks:
     @pytest.mark.asyncio
     async def test_health_checks_warn_uncommitted(self, harness):
         """Should warn about uncommitted changes."""
-        with patch('shutil.which', return_value="/usr/bin/claude"):
+        with patch('autonomous_dev_agent.harness.find_claude_executable', return_value="/usr/bin/claude"):
             with patch.object(harness.git, 'is_git_repo', return_value=True):
                 with patch.object(harness.git, 'get_status') as mock_status:
                     mock_status.return_value = Mock(

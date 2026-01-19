@@ -239,7 +239,7 @@ def init(
 @click.option('--project-name', '-n', help='Project name (default: derived from spec)')
 @click.option('--max-features', default=50, help='Maximum features to generate')
 @click.option('--min-features', default=20, help='Minimum features to generate')
-@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model to use')
+@click.option('--model', default='claude-opus-4-20250514', help='Claude model to use')
 @click.option('--output', '-o', default='feature-list.json', help='Output filename')
 @click.option('--merge', is_flag=True, help='Merge with existing backlog')
 @click.option('--dry-run', is_flag=True, help='Preview without saving')
