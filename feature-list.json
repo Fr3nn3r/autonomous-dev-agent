@@ -855,6 +855,144 @@
       ],
       "quality_gates": null,
       "model_override": null
+    },
+    {
+      "id": "OW1-session-logger",
+      "name": "Session Logger & Workspace Foundation",
+      "description": "Create .ada/ workspace structure with JSONL session logging. Log all agent interactions: prompts, assistant messages, tool calls with full inputs/outputs, errors, context updates. Verbose by default - capture everything for debugging and improvement.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 95,
+      "acceptance_criteria": [
+        "Create .ada/logs/sessions/ directory structure",
+        "SessionLogger class writes JSONL (one JSON per line)",
+        "Log entry types: session_start, prompt, assistant, tool_result, context_update, error, session_end",
+        "Full tool inputs and outputs captured (no truncation)",
+        "Immediate flush for real-time streaming support",
+        "Session file naming: {YYYYMMDD}_{NNN}_{agent_type}_{feature_id}.jsonl",
+        "Wire logging into CLISession and SDKSession"
+      ],
+      "depends_on": [],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Observability Workspace Phase 1",
+        "Spec in docs/OBSERVABILITY_SPEC.md",
+        "JSONL format enables streaming and easy parsing"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [
+          "Sanitize any API keys in logged content",
+          "Ensure logs directory in .gitignore"
+        ],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "OW2-project-context",
+      "name": "Project Context Preservation",
+      "description": "Enhance ada init to capture project description. Store in .ada/project.json with name, description, created_at, and init_session details. This preserves the initial context that was previously lost.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 90,
+      "acceptance_criteria": [
+        "ada init --description flag added",
+        "Interactive mode prompts for description",
+        ".ada/project.json created with ProjectContext model",
+        "Init session prompt and outcome stored",
+        "ada info command shows project context",
+        "project.json committed to git (not in .gitignore)"
+      ],
+      "depends_on": ["OW1-session-logger"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Observability Workspace Phase 1",
+        "Fixes the 'lost initial instructions' problem"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "OW3-log-cli",
+      "name": "CLI Log Commands",
+      "description": "Add ada logs command for viewing session logs. Support: list sessions, view specific session, filter by feature/outcome/date, real-time tail of current session, export to file.",
+      "category": "functional",
+      "status": "pending",
+      "priority": 85,
+      "acceptance_criteria": [
+        "ada logs - list recent sessions with summary table",
+        "ada logs --session ID - view specific session",
+        "ada logs --feature ID - filter by feature",
+        "ada logs --outcome failure - filter by outcome",
+        "ada logs --tail - real-time follow of current session",
+        "ada logs --tail --format json - raw JSON output",
+        "ada logs --export FILE - export sessions to file",
+        "Pretty formatting for human readability"
+      ],
+      "depends_on": ["OW1-session-logger"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Observability Workspace Phase 2"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "OW4-log-rotation",
+      "name": "Log Rotation & Indexing",
+      "description": "Auto-rotate logs when .ada/logs exceeds 100MB. Maintain index.json for fast session lookup. Archive old sessions to compressed files.",
+      "category": "infrastructure",
+      "status": "pending",
+      "priority": 70,
+      "acceptance_criteria": [
+        "Monitor .ada/logs/ directory size",
+        "Trigger rotation at 100MB threshold",
+        "Archive oldest sessions to logs/archive/YYYYMM.tar.gz",
+        "Keep last 50 sessions in active directory",
+        "Maintain logs/index.json with session summaries",
+        "Index includes archived session references",
+        "ada migrate command for existing projects"
+      ],
+      "depends_on": ["OW1-session-logger", "OW3-log-cli"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Observability Workspace Phase 3"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
     }
   ],
   "created_at": "2026-01-18T13:00:00",
