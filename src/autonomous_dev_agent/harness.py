@@ -44,6 +44,16 @@ from .alert_manager import (
 )
 
 
+# Windows-compatible symbols (cp1252 doesn't support Unicode checkmarks)
+if sys.platform == "win32":
+    SYM_OK = "[OK]"
+    SYM_FAIL = "[X]"
+    SYM_WARN = "[!]"
+else:
+    SYM_OK = "✓"
+    SYM_FAIL = "✗"
+    SYM_WARN = "!"
+
 console = Console()
 
 
@@ -156,7 +166,7 @@ class AutonomousHarness:
         if not self.git.is_git_repo():
             errors.append("Not a git repository")
         else:
-            console.print("  [green]✓[/green] Git repository found")
+            console.print(f"  [green]{SYM_OK}[/green] Git repository found")
 
             # Check for uncommitted changes
             git_status = self.git.get_status()
@@ -172,7 +182,7 @@ class AutonomousHarness:
             claude_path = shutil.which("claude.cmd")
 
         if claude_path:
-            console.print(f"  [green]✓[/green] Claude CLI found: {claude_path}")
+            console.print(f"  [green]{SYM_OK}[/green] Claude CLI found: {claude_path}")
         else:
             errors.append("Claude CLI not found in PATH")
 
@@ -184,7 +194,7 @@ class AutonomousHarness:
             try:
                 data = json.loads(backlog_path.read_text())
                 Backlog.model_validate(data)
-                console.print(f"  [green]✓[/green] Backlog file valid: {backlog_path.name}")
+                console.print(f"  [green]{SYM_OK}[/green] Backlog file valid: {backlog_path.name}")
             except json.JSONDecodeError as e:
                 errors.append(f"Backlog file is not valid JSON: {e}")
             except Exception as e:
@@ -210,14 +220,14 @@ class AutonomousHarness:
             if free_mb < 100:
                 errors.append(f"Low disk space: {free_mb:.0f}MB free (need >100MB)")
             else:
-                console.print(f"  [green]✓[/green] Disk space: {free_mb:.0f}MB free")
+                console.print(f"  [green]{SYM_OK}[/green] Disk space: {free_mb:.0f}MB free")
         except Exception as e:
             warnings.append(f"Could not check disk space: {e}")
 
         # 5. Check required tools
         for tool in ["git", "python"]:
             if shutil.which(tool):
-                console.print(f"  [green]✓[/green] {tool} found")
+                console.print(f"  [green]{SYM_OK}[/green] {tool} found")
             else:
                 errors.append(f"Required tool not found: {tool}")
 
@@ -225,13 +235,13 @@ class AutonomousHarness:
         if self.config.session_mode.value == "sdk":
             import os
             if os.environ.get("ANTHROPIC_API_KEY"):
-                console.print("  [green]✓[/green] ANTHROPIC_API_KEY set")
+                console.print(f"  [green]{SYM_OK}[/green] ANTHROPIC_API_KEY set")
             else:
                 warnings.append("ANTHROPIC_API_KEY not set (required for SDK mode)")
 
         # Print warnings
         for warning in warnings:
-            console.print(f"  [yellow]![/yellow] {warning}")
+            console.print(f"  [yellow]{SYM_WARN}[/yellow] {warning}")
 
         return errors, warnings
 
@@ -743,12 +753,12 @@ class AutonomousHarness:
         # Log verification results
         for r in verification_report.results:
             if r.skipped:
-                console.print(f"[dim]⊘ {r.name}: {r.message}[/dim]")
+                console.print(f"[dim][-] {r.name}: {r.message}[/dim]")
             elif r.passed:
                 duration_str = f" ({r.duration_seconds:.1f}s)" if r.duration_seconds else ""
-                console.print(f"[green]✓[/green] {r.name}: {r.message}{duration_str}")
+                console.print(f"[green]{SYM_OK}[/green] {r.name}: {r.message}{duration_str}")
             else:
-                console.print(f"[red]✗[/red] {r.name}: {r.message}")
+                console.print(f"[red]{SYM_FAIL}[/red] {r.name}: {r.message}")
                 if r.details:
                     # Show truncated details
                     details = r.details[:500] + "..." if len(r.details) > 500 else r.details
@@ -836,7 +846,7 @@ class AutonomousHarness:
             sessions_spent=feature.sessions_spent
         )
 
-        console.print(f"\n[green]✓[/green] Feature completed: {feature.name}")
+        console.print(f"\n[green]{SYM_OK}[/green] Feature completed: {feature.name}")
         return True
 
     async def _run_coding_session_with_retry(self, feature: Feature) -> SessionResult:
@@ -1032,7 +1042,7 @@ class AutonomousHarness:
         if errors:
             console.print("\n[red]Health check failed:[/red]")
             for error in errors:
-                console.print(f"  [red]✗[/red] {error}")
+                console.print(f"  [red]{SYM_FAIL}[/red] {error}")
             console.print("\n[red]Cannot proceed. Fix the issues above and try again.[/red]")
             return
 

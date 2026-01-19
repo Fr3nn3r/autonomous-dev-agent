@@ -28,6 +28,14 @@ from .models import (
 
 console = Console()
 
+# Windows-compatible symbols (cp1252 doesn't support Unicode checkmarks)
+if sys.platform == "win32":
+    SYM_OK = "[OK]"
+    SYM_FAIL = "[X]"
+else:
+    SYM_OK = "✓"
+    SYM_FAIL = "✗"
+
 
 class FeatureVerifier:
     """Comprehensive feature verification engine.
@@ -357,11 +365,11 @@ class FeatureVerifier:
         console.print("\n[bold]Verification Results:[/bold]")
         for r in results:
             if r.skipped:
-                console.print(f"  [dim]⊘ {r.name}: {r.message}[/dim]")
+                console.print(f"  [dim][-] {r.name}: {r.message}[/dim]")
             elif r.passed:
-                console.print(f"  [green]✓ {r.name}[/green]: {r.message}")
+                console.print(f"  [green]{SYM_OK} {r.name}[/green]: {r.message}")
             else:
-                console.print(f"  [red]✗ {r.name}[/red]: {r.message}")
+                console.print(f"  [red]{SYM_FAIL} {r.name}[/red]: {r.message}")
 
         console.print("")
         return Confirm.ask("Approve this feature as complete?", default=False)

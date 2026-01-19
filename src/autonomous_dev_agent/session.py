@@ -31,6 +31,22 @@ from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCate
 from .cost_tracker import CostTracker
 
 
+def safe_print(text: str, **kwargs) -> None:
+    """Print text handling Unicode encoding errors on Windows.
+
+    Windows cp1252 encoding can't handle many Unicode characters (emojis, etc).
+    This function falls back to replacing unencodable characters with '?'.
+    Always flushes to ensure output is visible immediately.
+    """
+    kwargs.setdefault('flush', True)
+    try:
+        print(text, **kwargs)
+    except UnicodeEncodeError:
+        # Windows cp1252 can't handle some Unicode chars
+        safe_text = text.encode('ascii', errors='replace').decode('ascii')
+        print(safe_text, **kwargs)
+
+
 # =============================================================================
 # Input Prompt Detection (CLI mode)
 # =============================================================================
@@ -236,7 +252,7 @@ class BaseSession(ABC):
 
             # Apply timeout if configured
             if timeout > 0:
-                print(f"[SESSION] Timeout set: {timeout}s ({timeout // 60}m)")
+                print(f"[SESSION] Timeout set: {timeout}s ({timeout // 60}m)", flush=True)
                 result = await asyncio.wait_for(coro, timeout=timeout)
             else:
                 result = await coro
@@ -431,7 +447,7 @@ class CLISession(BaseSession):
                         timeout_warnings = 0
 
                         if stream_name == "stdout":
-                            print(text, end='', flush=True)
+                            safe_print(text, end='', flush=True)
 
                             recent_output += text
                             if len(recent_output) > 1000:
@@ -440,7 +456,7 @@ class CLISession(BaseSession):
                             prompt_match = detect_input_prompt(recent_output)
                             if prompt_match and not detected_prompt:
                                 detected_prompt = prompt_match
-                                print(f"\n\n[CLI WARNING] Detected input prompt: '{prompt_match}'")
+                                safe_print(f"\n\n[CLI WARNING] Detected input prompt: '{prompt_match}'")
                                 print(f"[CLI WARNING] CLI may be waiting for user input!")
 
                     except asyncio.TimeoutError:
@@ -454,7 +470,7 @@ class CLISession(BaseSession):
                             print(f"\n[CLI INFO] No output for {elapsed:.0f}s (CLI buffers output, this is normal)")
 
                         if detected_prompt:
-                            print(f"[CLI ERROR] Process stuck on input prompt: '{detected_prompt}'")
+                            safe_print(f"[CLI ERROR] Process stuck on input prompt: '{detected_prompt}'")
                             return "stuck_on_prompt"
 
                 return "ok"
@@ -505,7 +521,7 @@ class CLISession(BaseSession):
             print(f"[CLI DEBUG] Stdout length: {len(stdout_text)} chars")
             print(f"[CLI DEBUG] Stderr length: {len(stderr_text)} chars")
             if stderr_text:
-                print(f"[CLI DEBUG] Stderr: {stderr_text[:500]}")
+                safe_print(f"[CLI DEBUG] Stderr: {stderr_text[:500]}")
             if not stdout_text and not stderr_text:
                 print(f"[CLI DEBUG] No output received from CLI!")
 
@@ -515,11 +531,11 @@ class CLISession(BaseSession):
                 result.error_message = f"CLI exited with code {process.returncode}: {error_text.strip()[:500]}"
 
                 if result.error_category == ErrorCategory.BILLING:
-                    print(f"\n[ERROR] API credits issue: {error_text}")
+                    safe_print(f"\n[ERROR] API credits issue: {error_text}")
                 elif result.error_category == ErrorCategory.RATE_LIMIT:
-                    print(f"\n[ERROR] Rate limited: {error_text}")
+                    safe_print(f"\n[ERROR] Rate limited: {error_text}")
                 elif result.error_category == ErrorCategory.AUTH:
-                    print(f"\n[ERROR] Authentication issue: {error_text}")
+                    safe_print(f"\n[ERROR] Authentication issue: {error_text}")
                 else:
                     print(f"\n[ERROR] CLI failed (code {process.returncode}) - {result.error_category.value}")
 
@@ -576,9 +592,13 @@ class SDKSession(BaseSession):
         on_message: Optional[Callable[[Any], None]] = None
     ) -> SessionResult:
         """Run session using Claude Agent SDK."""
+        print("[SDK] Entering _run_session...", flush=True)
         try:
+            print("[SDK] Importing claude_agent_sdk...", flush=True)
             from claude_agent_sdk import query, ClaudeAgentOptions
-        except ImportError:
+            print("[SDK] Import successful", flush=True)
+        except ImportError as e:
+            print(f"[SDK] Import failed: {e}, falling back to mock", flush=True)
             # Fall back to mock if SDK not installed
             return await self._run_mock_session(prompt, on_message)
 
@@ -594,14 +614,14 @@ class SDKSession(BaseSession):
         total_input_tokens = 0
         total_output_tokens = 0
 
-        print(f"\n[SDK] Starting session with model: {self.config.model}")
-        print(f"[SDK] NOTE: SDK uses API credits, not your Claude subscription")
-        print(f"[SDK] Working directory: {self.project_path}")
-        print(f"[SDK] Allowed tools: {', '.join(self.config.allowed_tools)}")
-        print(f"[SDK] Prompt length: {len(prompt)} chars")
-        print(f"\n{'='*60}")
-        print("[SDK] Waiting for messages from Claude Agent SDK...")
-        print(f"{'='*60}\n")
+        print(f"\n[SDK] Starting session with model: {self.config.model}", flush=True)
+        print(f"[SDK] NOTE: SDK uses API credits, not your Claude subscription", flush=True)
+        print(f"[SDK] Working directory: {self.project_path}", flush=True)
+        print(f"[SDK] Allowed tools: {', '.join(self.config.allowed_tools)}", flush=True)
+        print(f"[SDK] Prompt length: {len(prompt)} chars", flush=True)
+        print(f"\n{'='*60}", flush=True)
+        print("[SDK] Waiting for messages from Claude Agent SDK...", flush=True)
+        print(f"{'='*60}\n", flush=True)
 
         try:
             options = ClaudeAgentOptions(
@@ -613,31 +633,56 @@ class SDKSession(BaseSession):
 
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
-
                 msg_type = type(message).__name__
-                msg_text = getattr(message, 'text', None) or getattr(message, 'content', None) or str(message)
-                all_messages.append(f"[{msg_type}] {msg_text[:200] if msg_text else '(no text)'}")
-
                 timestamp = datetime.now().strftime("%H:%M:%S")
-                print(f"\n[{timestamp}] Message #{message_count}: {msg_type}")
 
-                if msg_text and isinstance(msg_text, str):
-                    display_text = msg_text[:300] + "..." if len(msg_text) > 300 else msg_text
-                    display_text = display_text.replace('\n', ' ').strip()
-                    if display_text:
-                        print(f"  Content: {display_text}")
+                # Extract data from message - SDK uses 'data' dict
+                data = getattr(message, 'data', {}) or {}
+                msg_text = (
+                    getattr(message, 'text', None) or
+                    getattr(message, 'content', None) or
+                    data.get('text') or
+                    data.get('content') or
+                    ''
+                )
 
-                if hasattr(message, 'tool_name'):
-                    print(f"  Tool: {message.tool_name}")
-                if hasattr(message, 'tool_input'):
-                    tool_input = str(message.tool_input)[:200]
-                    print(f"  Input: {tool_input}...")
-                if hasattr(message, 'tool_result'):
-                    tool_result = str(message.tool_result)[:200]
-                    print(f"  Result: {tool_result}...")
+                # Get tool info from data
+                tool_name = data.get('tool_name') or data.get('tool') or getattr(message, 'tool_name', None)
+                tool_input = data.get('tool_input') or data.get('input') or getattr(message, 'tool_input', None)
+                tool_result = data.get('tool_result') or data.get('result') or getattr(message, 'tool_result', None)
+
+                all_messages.append(f"[{msg_type}] {str(msg_text)[:200] if msg_text else '(no text)'}")
+
+                # Format display based on message type
+                if 'Assistant' in msg_type:
+                    if tool_name:
+                        print(f"\n[{timestamp}] Tool: {tool_name}", flush=True)
+                        if tool_input:
+                            input_str = str(tool_input)[:300]
+                            safe_print(f"  Input: {input_str}")
+                    elif msg_text:
+                        print(f"\n[{timestamp}] Claude:", flush=True)
+                        display_text = str(msg_text)[:500].replace('\n', '\n  ')
+                        safe_print(f"  {display_text}")
+                    else:
+                        print(f"\n[{timestamp}] {msg_type}", flush=True)
+                elif 'User' in msg_type:
+                    if tool_result:
+                        result_str = str(tool_result)[:200]
+                        safe_print(f"  Result: {result_str}...")
+                    # Skip printing empty user messages
+                elif 'System' in msg_type:
+                    subtype = data.get('subtype', '')
+                    print(f"\n[{timestamp}] System: {subtype}", flush=True)
+                elif 'Result' in msg_type:
+                    print(f"\n[{timestamp}] {msg_type}: {msg_text[:200] if msg_text else 'done'}", flush=True)
+                else:
+                    print(f"\n[{timestamp}] {msg_type}", flush=True)
+                    if msg_text:
+                        safe_print(f"  {str(msg_text)[:200]}")
 
                 if hasattr(message, 'is_error') and message.is_error:
-                    print(f"  ERROR: {getattr(message, 'error', 'Unknown error')}")
+                    safe_print(f"  ERROR: {getattr(message, 'error', data.get('error', 'Unknown error'))}")
 
                 if hasattr(message, 'usage'):
                     usage = message.usage
@@ -665,7 +710,7 @@ class SDKSession(BaseSession):
                         result.summary = message.text
                     if is_error and hasattr(message, 'text'):
                         result.error_message = message.text
-                        print(f"\n[SDK ERROR] Agent returned error: {message.text}")
+                        safe_print(f"\n[SDK ERROR] Agent returned error: {message.text}")
                     else:
                         print(f"\n[SDK] ResultMessage received - session completing")
                 elif hasattr(message, 'is_final') and message.is_final:
@@ -703,8 +748,8 @@ class SDKSession(BaseSession):
             result.raw_error = error_str
             result.error_category = classify_error(error_str)
 
-            print(f"\n[SDK ERROR] Exception during session:")
-            print(f"[SDK ERROR] {error_str}")
+            safe_print(f"\n[SDK ERROR] Exception during session:")
+            safe_print(f"[SDK ERROR] {error_str}")
             print(f"[SDK ERROR] Category: {result.error_category.value}")
 
             if result.error_category == ErrorCategory.BILLING:
@@ -728,7 +773,7 @@ class SDKSession(BaseSession):
                 if all_messages:
                     print(f"[SDK] Last few messages:")
                     for msg in all_messages[-3:]:
-                        print(f"  {msg}")
+                        safe_print(f"  {msg}")
 
                 if received_result_message and message_count > 0:
                     print(f"[SDK] Received ResultMessage - session may have completed")

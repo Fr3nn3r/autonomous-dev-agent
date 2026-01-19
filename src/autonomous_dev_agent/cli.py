@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +25,14 @@ from .discovery.requirements import RequirementsExtractor
 from .verification import FeatureVerifier, PreCompleteHook
 
 console = Console()
+
+# Windows-compatible symbols (cp1252 doesn't support Unicode checkmarks)
+if sys.platform == "win32":
+    SYM_OK = "[OK]"
+    SYM_FAIL = "[X]"
+else:
+    SYM_OK = "✓"
+    SYM_FAIL = "✗"
 
 
 @click.group()
@@ -843,12 +852,12 @@ def verify(
         # Display results
         for r in report.results:
             if r.skipped:
-                console.print(f"  [dim]⊘ {r.name}: {r.message}[/dim]")
+                console.print(f"  [dim][-] {r.name}: {r.message}[/dim]")
             elif r.passed:
                 duration_str = f" ({r.duration_seconds:.1f}s)" if r.duration_seconds else ""
-                console.print(f"  [green]✓[/green] {r.name}: {r.message}{duration_str}")
+                console.print(f"  [green]{SYM_OK}[/green] {r.name}: {r.message}{duration_str}")
             else:
-                console.print(f"  [red]✗[/red] {r.name}: {r.message}")
+                console.print(f"  [red]{SYM_FAIL}[/red] {r.name}: {r.message}")
                 if r.details:
                     details = r.details[:300] + "..." if len(r.details) > 300 else r.details
                     console.print(f"    [dim]{details}[/dim]")
@@ -860,9 +869,9 @@ def verify(
         # Summary
         if report.passed:
             approval_note = " (approved)" if report.requires_approval and report.approved else ""
-            console.print(f"\n  [green]✓ Verification passed{approval_note}[/green]")
+            console.print(f"\n  [green]{SYM_OK} Verification passed{approval_note}[/green]")
         else:
-            console.print(f"\n  [red]✗ Verification failed[/red]")
+            console.print(f"\n  [red]{SYM_FAIL} Verification failed[/red]")
 
 
 @main.command('init-hooks')
