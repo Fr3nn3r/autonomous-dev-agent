@@ -74,14 +74,14 @@ function AlertItem({
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <span className={`font-medium text-sm ${!alert.read ? 'text-white' : 'text-gray-300'}`}>
+            <span className={`font-medium text-sm ${!alert.read ? 'text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-300'}`}>
               {alert.title}
             </span>
-            <span className="text-xs text-gray-500 shrink-0">
+            <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">
               {formatTimeAgo(alert.timestamp)}
             </span>
           </div>
-          <p className="text-sm text-gray-400 mt-1 line-clamp-2">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
             {alert.message}
           </p>
         </div>
@@ -89,7 +89,7 @@ function AlertItem({
           {!alert.read && (
             <button
               onClick={() => onMarkRead(alert.id)}
-              className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded"
+              className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
               title="Mark as read"
             >
               <Check className="w-4 h-4" />
@@ -97,7 +97,7 @@ function AlertItem({
           )}
           <button
             onClick={() => onDismiss(alert.id)}
-            className="p-1 text-gray-400 hover:text-white hover:bg-gray-600 rounded"
+            className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-600 rounded"
             title="Dismiss"
           >
             <Trash2 className="w-4 h-4" />
@@ -171,7 +171,7 @@ export function AlertCenter({ className = '' }: AlertCenterProps) {
       {/* Bell Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 text-gray-400 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+        className="relative p-2 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 rounded-lg transition-colors"
         aria-label="Notifications"
       >
         <Bell className="w-5 h-5" />
@@ -184,22 +184,22 @@ export function AlertCenter({ className = '' }: AlertCenterProps) {
 
       {/* Dropdown */}
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-96 max-h-[32rem] bg-gray-800 border border-gray-700 rounded-lg shadow-xl z-50 flex flex-col">
+        <div className="absolute right-0 mt-2 w-96 max-h-[32rem] bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-50 flex flex-col">
           {/* Header */}
-          <div className="px-4 py-3 border-b border-gray-700 flex items-center justify-between">
+          <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <h3 className="font-semibold">Notifications</h3>
             <div className="flex items-center gap-2">
               {unreadCount > 0 && (
                 <button
                   onClick={() => markAllReadMutation.mutate()}
-                  className="text-xs text-primary-400 hover:text-primary-300"
+                  className="text-xs text-primary-500 hover:text-primary-400"
                 >
                   Mark all read
                 </button>
               )}
               <button
                 onClick={() => setIsOpen(false)}
-                className="p-1 text-gray-400 hover:text-white hover:bg-gray-700 rounded"
+                className="p-1 text-gray-400 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-gray-700 rounded"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -209,7 +209,7 @@ export function AlertCenter({ className = '' }: AlertCenterProps) {
           {/* Alerts List */}
           <div className="flex-1 overflow-y-auto p-2 space-y-2">
             {alerts.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
+              <div className="text-center py-8 text-gray-400 dark:text-gray-400">
                 <Bell className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <p>No notifications</p>
               </div>

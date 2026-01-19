@@ -48,7 +48,7 @@ function getStatusIcon(status: string) {
     case 'blocked':
       return <AlertCircle className="w-4 h-4 text-red-500" />
     default:
-      return <Circle className="w-4 h-4 text-gray-500" />
+      return <Circle className="w-4 h-4 text-gray-400 dark:text-gray-500" />
   }
 }
 
@@ -63,7 +63,7 @@ function TimelineBar({ feature, earliestStart, latestEnd, timelineWidth }: Timel
   if (!earliestStart || !latestEnd || !feature.started_at) {
     return (
       <div className="h-6 flex items-center">
-        <span className="text-xs text-gray-500 italic">Not started</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500 italic">Not started</span>
       </div>
     )
   }
@@ -131,8 +131,8 @@ export function FeatureTimeline({ className = '' }: FeatureTimelineProps) {
 
   if (isLoading) {
     return (
-      <div className={`bg-gray-800 rounded-lg border border-gray-700 ${className}`}>
-        <div className="px-4 py-3 border-b border-gray-700">
+      <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ${className}`}>
+        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Calendar className="w-5 h-5" />
             Feature Timeline
@@ -141,7 +141,7 @@ export function FeatureTimeline({ className = '' }: FeatureTimelineProps) {
         <div className="p-4">
           <div className="animate-pulse space-y-3">
             {[1, 2, 3].map(i => (
-              <div key={i} className="h-16 bg-gray-700 rounded" />
+              <div key={i} className="h-16 bg-gray-200 dark:bg-gray-700 rounded" />
             ))}
           </div>
         </div>
@@ -151,14 +151,14 @@ export function FeatureTimeline({ className = '' }: FeatureTimelineProps) {
 
   if (error || !timeline) {
     return (
-      <div className={`bg-gray-800 rounded-lg border border-gray-700 ${className}`}>
-        <div className="px-4 py-3 border-b border-gray-700">
+      <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ${className}`}>
+        <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Calendar className="w-5 h-5" />
             Feature Timeline
           </h2>
         </div>
-        <div className="p-4 text-gray-400 text-center">
+        <div className="p-4 text-gray-500 dark:text-gray-400 text-center">
           Unable to load timeline
         </div>
       </div>
@@ -172,15 +172,15 @@ export function FeatureTimeline({ className = '' }: FeatureTimelineProps) {
   const hasTimeData = earliestStart && latestEnd
 
   return (
-    <div className={`bg-gray-800 rounded-lg border border-gray-700 ${className}`}>
-      <div className="px-4 py-3 border-b border-gray-700">
+    <div className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 ${className}`}>
+      <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold flex items-center gap-2">
             <Calendar className="w-5 h-5 text-primary-500" />
             Feature Timeline
           </h2>
           {hasTimeData && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-gray-500 dark:text-gray-400">
               {formatDate(timeline.earliest_start)} - {formatDate(timeline.latest_end)}
             </span>
           )}
@@ -188,13 +188,13 @@ export function FeatureTimeline({ className = '' }: FeatureTimelineProps) {
       </div>
       <div className="p-4 overflow-x-auto">
         {timeline.features.length === 0 ? (
-          <p className="text-gray-400 text-center py-4">No features in backlog</p>
+          <p className="text-gray-500 dark:text-gray-400 text-center py-4">No features in backlog</p>
         ) : (
           <div className="space-y-2">
             {timeline.features.map(feature => (
               <div
                 key={feature.id}
-                className="flex items-center gap-4 p-2 bg-gray-700/30 rounded hover:bg-gray-700/50 transition-colors"
+                className="flex items-center gap-4 p-2 bg-gray-100 dark:bg-gray-700/30 rounded hover:bg-gray-200 dark:hover:bg-gray-700/50 transition-colors"
               >
                 {/* Feature Info */}
                 <div className="w-48 shrink-0">
@@ -204,7 +204,7 @@ export function FeatureTimeline({ className = '' }: FeatureTimelineProps) {
                       {feature.name}
                     </span>
                   </div>
-                  <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
+                  <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1">
                     {feature.sessions.length > 0 && (
                       <span className="flex items-center gap-1">
                         <Clock className="w-3 h-3" />
@@ -239,7 +239,7 @@ export function FeatureTimeline({ className = '' }: FeatureTimelineProps) {
 
         {/* Legend */}
         {timeline.features.length > 0 && (
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400">
+          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 rounded bg-green-500" />
               <span>Success</span>
