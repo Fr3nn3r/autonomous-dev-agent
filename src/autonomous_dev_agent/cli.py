@@ -3,6 +3,7 @@
 import asyncio
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -11,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from .models import (
-    Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig, SessionMode,
+    Backlog, Feature, FeatureStatus, FeatureCategory, HarnessConfig,
     Severity, DiscoveryResult, VerificationConfig,
 )
 from .harness import AutonomousHarness
@@ -50,54 +51,32 @@ def main():
 
 @main.command()
 @click.argument('project_path', type=click.Path(exists=True))
-@click.option('--mode', type=click.Choice(['cli', 'sdk']), default='cli',
-              help='Session mode: cli (uses subscription, reliable) or sdk (uses API credits, Windows issues)')
 @click.option('--model', default='claude-sonnet-4-20250514', help='Claude model to use')
 @click.option('--threshold', default=70.0, help='Context threshold percentage for handoff')
 @click.option('--max-sessions', type=int, help='Maximum sessions before stopping')
-@click.option('--max-turns', default=100, help='Maximum turns per session (CLI mode only)')
 @click.option('--backlog', default='feature-list.json', help='Backlog file name')
 def run(
     project_path: str,
-    mode: str,
     model: str,
     threshold: float,
     max_sessions: Optional[int],
-    max_turns: int,
     backlog: str
 ):
     """Run the autonomous agent on a project.
 
     PROJECT_PATH is the path to the project directory containing feature-list.json.
 
-    Two modes are available:
-
-    \b
-    --mode cli (default, recommended):
-      - Uses the Claude CLI directly
-      - Billed to your Claude subscription (Pro/Max)
-      - More reliable on Windows
-      - Shows full output when complete
-
-    \b
-    --mode sdk:
-      - Uses the Claude Agent SDK
-      - Billed to Anthropic API credits (separate from subscription)
-      - Streaming output with verbose logging
-      - Known reliability issues on Windows (exit code 1 bug)
+    Uses the Claude Agent SDK with API credits for billing. Provides real-time
+    streaming output and detailed observability.
     """
-    session_mode = SessionMode.CLI if mode == 'cli' else SessionMode.SDK
-
     config = HarnessConfig(
-        session_mode=session_mode,
         model=model,
         context_threshold_percent=threshold,
         max_sessions=max_sessions,
-        cli_max_turns=max_turns,
         backlog_file=backlog
     )
 
-    console.print(f"[bold]Mode:[/bold] {mode.upper()} ({'subscription' if mode == 'cli' else 'API credits'})")
+    console.print(f"[bold]Mode:[/bold] SDK (API credits)")
     console.print(f"[bold]Model:[/bold] {model}")
 
     harness = AutonomousHarness(project_path, config)
@@ -177,6 +156,15 @@ def init(
             backlog = result.backlog
             console.print(f"[green]OK[/green] Generated {result.feature_count} features")
 
+            # Build init_session info for project.json
+            init_session_info = {
+                "spec_file": str(Path(spec).resolve()),
+                "model": model,
+                "feature_count": result.feature_count,
+                "outcome": "success",
+                "generated_at": datetime.now().isoformat()
+            }
+
         except FileNotFoundError as e:
             console.print(f"[red]Error:[/red] {e}")
             return
@@ -193,6 +181,7 @@ def init(
             project_path=str(path.resolve()),
             features=[]
         )
+        init_session_info = None
 
     # Save backlog
     if backlog_file.exists():
@@ -213,7 +202,8 @@ def init(
         workspace.create_project_context(
             name=name,
             description=description,
-            created_by="user"
+            created_by="user",
+            init_session=init_session_info
         )
         console.print(f"[green]OK[/green] Created .ada/project.json")
     else:

@@ -63,6 +63,34 @@ class TestWorkspaceManager:
         workspace = WorkspaceManager(tmp_path)
         assert workspace.get_project_context() is None
 
+    def test_create_project_context_with_init_session(self, tmp_path: Path):
+        """Test creating project context with init_session info."""
+        workspace = WorkspaceManager(tmp_path)
+
+        init_session_info = {
+            "spec_file": "/path/to/spec.md",
+            "model": "claude-sonnet-4-20250514",
+            "feature_count": 15,
+            "outcome": "success",
+            "generated_at": "2024-01-15T10:30:00"
+        }
+
+        context = workspace.create_project_context(
+            name="Test Project",
+            description="A test project",
+            created_by="test",
+            init_session=init_session_info
+        )
+
+        assert context.init_session is not None
+        assert context.init_session["spec_file"] == "/path/to/spec.md"
+        assert context.init_session["feature_count"] == 15
+
+        # Reload and verify
+        loaded = workspace.get_project_context()
+        assert loaded.init_session is not None
+        assert loaded.init_session["model"] == "claude-sonnet-4-20250514"
+
     def test_session_index_operations(self, tmp_path: Path):
         """Test session index CRUD operations."""
         workspace = WorkspaceManager(tmp_path)
@@ -277,6 +305,30 @@ class TestWorkspaceManager:
         assert stats["total_tokens"] == 6000  # 1000 + 2000 + 3000
         assert stats["outcomes"]["success"] == 2
         assert stats["outcomes"]["failure"] == 1
+
+    def test_get_workspace_stats_with_init_session(self, tmp_path: Path):
+        """Test workspace statistics include init_session."""
+        workspace = WorkspaceManager(tmp_path)
+
+        init_session_info = {
+            "spec_file": "/path/to/spec.md",
+            "model": "claude-sonnet-4-20250514",
+            "feature_count": 10,
+            "outcome": "success",
+            "generated_at": "2024-01-15T10:30:00"
+        }
+
+        workspace.create_project_context(
+            name="Test",
+            description="Test project",
+            init_session=init_session_info
+        )
+
+        stats = workspace.get_workspace_stats()
+
+        assert stats["init_session"] is not None
+        assert stats["init_session"]["spec_file"] == "/path/to/spec.md"
+        assert stats["init_session"]["feature_count"] == 10
 
 
 class TestSessionIndex:

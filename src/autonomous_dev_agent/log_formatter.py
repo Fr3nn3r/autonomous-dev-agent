@@ -394,6 +394,21 @@ def format_workspace_info(stats: dict, console: Optional[Console] = None) -> lis
         border_style="cyan"
     ))
 
+    # Initialization info panel (if spec was used)
+    if stats.get('init_session'):
+        init = stats['init_session']
+        init_content = f"[bold]Spec File:[/bold] {init.get('spec_file', 'N/A')}\n"
+        init_content += f"[bold]Features Generated:[/bold] {init.get('feature_count', 0)}\n"
+        init_content += f"[bold]Model:[/bold] {init.get('model', 'N/A')}\n"
+        if init.get('generated_at'):
+            init_content += f"[bold]Generated:[/bold] {init['generated_at'][:10]}"
+
+        renderables.append(Panel(
+            init_content.strip(),
+            title="Initialization",
+            border_style="blue"
+        ))
+
     # Stats table
     table = Table(show_header=False, box=None)
     table.add_column("Metric", style="bold")

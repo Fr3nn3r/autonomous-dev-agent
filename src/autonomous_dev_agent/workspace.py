@@ -129,7 +129,8 @@ class WorkspaceManager:
         self,
         name: str,
         description: str = "",
-        created_by: str = "user"
+        created_by: str = "user",
+        init_session: Optional[dict] = None
     ) -> ProjectContext:
         """Create a new project context.
 
@@ -137,6 +138,7 @@ class WorkspaceManager:
             name: Project name
             description: Project description
             created_by: Who created the project
+            init_session: Optional dict with init session info (spec_file, model, etc.)
 
         Returns:
             Created ProjectContext
@@ -145,7 +147,8 @@ class WorkspaceManager:
             name=name,
             description=description,
             created_at=datetime.now(),
-            created_by=created_by
+            created_by=created_by,
+            init_session=init_session
         )
         self.save_project_context(context)
         return context
@@ -528,6 +531,7 @@ class WorkspaceManager:
             "project_name": project.name if project else "Unknown",
             "project_description": project.description if project else "",
             "created_at": project.created_at.isoformat() if project else None,
+            "init_session": project.init_session if project else None,
             "total_sessions": index.total_sessions,
             "total_cost_usd": total_cost,
             "total_tokens": total_tokens,
