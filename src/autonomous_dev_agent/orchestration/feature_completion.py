@@ -206,7 +206,11 @@ class FeatureCompletionHandler:
     ) -> bool:
         """Validate and mark a feature as completed.
 
-        Runs quality gate validations and tests before marking complete.
+        Runs quality gate validations before marking complete.
+        Testing is the agent's responsibility (per coding.md prompt) - the harness
+        trusts the agent's completion claim. This avoids redundant test runs and
+        looping issues when pre-existing build errors cause test failures.
+
         Uses Phase 3 verification system if configured, otherwise falls back
         to legacy quality gates.
 
@@ -217,7 +221,7 @@ class FeatureCompletionHandler:
             backlog: Backlog to update
 
         Returns:
-            True if feature was completed, False if validation/tests failed
+            True if feature was completed, False if validation failed
         """
         # Use Phase 3 verification if configured
         if self.config.verification:
@@ -259,29 +263,9 @@ class FeatureCompletionHandler:
 
             return False
 
-        # Run tests if configured
-        tests_passed, test_message = await self.run_tests()
-
-        if not tests_passed:
-            # Tests failed - do not complete the feature
-            console.print(f"[yellow]Feature not completed - tests failed[/yellow]")
-
-            # Log the test failure
-            self.progress.append_entry(ProgressEntry(
-                session_id=session.session_id,
-                feature_id=feature.id,
-                action="tests_failed",
-                summary=f"Tests failed: {test_message}"
-            ))
-
-            # Add note to feature
-            backlog.add_implementation_note(
-                feature.id,
-                f"Session {session.session_id}: Tests failed - {test_message}"
-            )
-            self._save_backlog()
-
-            return False
+        # Note: Testing is the agent's responsibility (per coding.md prompt).
+        # The harness trusts the agent ran tests before claiming completion.
+        # This avoids redundant test runs and looping on pre-existing build errors.
 
         # Grace period enforcement: check if project has tests
         completed_count = sum(

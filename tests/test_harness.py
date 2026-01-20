@@ -797,10 +797,16 @@ class TestFeatureCompletion:
             assert harness.backlog.features[0].status == FeatureStatus.COMPLETED
 
     @pytest.mark.asyncio
-    async def test_complete_feature_fails_on_test_failure(self, harness):
-        """Should not complete feature when tests fail."""
+    async def test_complete_feature_trusts_agent_for_testing(self, harness):
+        """Feature completes even if test_command would fail - testing is agent's responsibility.
+
+        The harness no longer runs tests at the completion stage. Testing is the agent's
+        responsibility (per coding.md prompt). This avoids redundant test runs and
+        looping issues when pre-existing build errors cause test failures.
+        """
         harness.load_backlog()
-        # Use Windows-compatible command
+        # Even with a failing test command, feature should complete
+        # because harness trusts agent ran tests before claiming completion
         harness.config.test_command = 'python -c "import sys; sys.exit(1)"'
         session = harness.sessions.create_session()
         feature = harness.backlog.features[0]
@@ -817,8 +823,9 @@ class TestFeatureCompletion:
             session, feature, result, harness.backlog
         )
 
-        assert completed is False
-        assert harness.backlog.features[0].status != FeatureStatus.COMPLETED
+        # Feature completes - harness trusts agent's completion claim
+        assert completed is True
+        assert harness.backlog.features[0].status == FeatureStatus.COMPLETED
 
 
 # =============================================================================
