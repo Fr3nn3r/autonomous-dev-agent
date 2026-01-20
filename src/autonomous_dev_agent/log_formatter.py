@@ -107,7 +107,6 @@ def format_session_list(
     table.add_column("Outcome", style="white")
     table.add_column("Turns", justify="right")
     table.add_column("Tokens", justify="right")
-    table.add_column("Cost", justify="right", style="green")
     table.add_column("Duration", justify="right")
 
     outcome_colors = {
@@ -145,7 +144,6 @@ def format_session_list(
             outcome_str,
             str(session.turns),
             format_tokens(session.tokens_total),
-            format_cost(session.cost_usd),
             duration
         )
 
@@ -242,12 +240,11 @@ def format_session_detail(
         elif entry_type == LogEntryType.CONTEXT_UPDATE.value:
             total_tokens = entry.get("total_tokens", 0)
             context_pct = entry.get("context_percent", 0)
-            cost = entry.get("total_cost_usd", 0)
 
             renderables.append(
                 Text(
                     f"  Context: {format_tokens(total_tokens)} tokens "
-                    f"({context_pct:.1f}%) - {format_cost(cost)}",
+                    f"({context_pct:.1f}%)",
                     style="dim"
                 )
             )
@@ -267,7 +264,6 @@ def format_session_detail(
             outcome = entry.get("outcome", "unknown")
             duration = entry.get("duration_seconds", 0)
             turns = entry.get("turns", 0)
-            cost = entry.get("cost_usd", 0)
             files = entry.get("files_changed", [])
 
             outcome_color = "green" if outcome == "success" else "yellow" if outcome == "handoff" else "red"
@@ -275,7 +271,6 @@ def format_session_detail(
             content = f"[bold]Outcome:[/bold] [{outcome_color}]{outcome}[/{outcome_color}]\n"
             content += f"[bold]Duration:[/bold] {format_duration(duration)}\n"
             content += f"[bold]Turns:[/bold] {turns}\n"
-            content += f"[bold]Cost:[/bold] {format_cost(cost)}\n"
 
             if files:
                 content += f"[bold]Files changed:[/bold]\n"
@@ -350,8 +345,7 @@ def stream_session_pretty(
 
         elif entry_type == LogEntryType.CONTEXT_UPDATE.value:
             pct = entry.get("context_percent", 0)
-            cost = entry.get("total_cost_usd", 0)
-            yield f"  Context: {pct:.1f}% - Cost: {format_cost(cost)}"
+            yield f"  Context: {pct:.1f}%"
 
         elif entry_type == LogEntryType.ERROR.value:
             category = entry.get("category", "unknown")
@@ -361,9 +355,8 @@ def stream_session_pretty(
         elif entry_type == LogEntryType.SESSION_END.value:
             outcome = entry.get("outcome", "unknown")
             duration = entry.get("duration_seconds", 0)
-            cost = entry.get("cost_usd", 0)
             yield f"\n[{timestamp}] Session ended: {outcome}"
-            yield f"  Duration: {format_duration(duration)}, Cost: {format_cost(cost)}"
+            yield f"  Duration: {format_duration(duration)}"
 
 
 def format_workspace_info(stats: dict, console: Optional[Console] = None) -> list:
@@ -415,7 +408,6 @@ def format_workspace_info(stats: dict, console: Optional[Console] = None) -> lis
     table.add_column("Value", style="green")
 
     table.add_row("Total Sessions", str(stats.get("total_sessions", 0)))
-    table.add_row("Total Cost", format_cost(stats.get("total_cost_usd", 0)))
     table.add_row("Total Tokens", format_tokens(stats.get("total_tokens", 0)))
 
     duration = stats.get("total_duration_seconds", 0)

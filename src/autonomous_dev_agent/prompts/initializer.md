@@ -102,6 +102,21 @@ Ensure lockfiles are generated and committed for reproducible builds:
 
 If a lockfile doesn't exist and dependencies are declared, generate one before proceeding.
 
+## Windows npm Compatibility (CRITICAL)
+
+**On Windows with nvm-windows and Git Bash**, the `npm` command shim may silently fail - returning exit code 0 but doing NOTHING.
+
+**Detection:** Run `npm --version 2>&1`. If NO output appears, npm is broken.
+
+**Fix:** Use direct node invocation:
+```bash
+NPM_CLI=$(dirname "$(which node)")/node_modules/npm/bin/npm-cli.js
+node "$NPM_CLI" install    # Instead of: npm install
+node "$NPM_CLI" test       # Instead of: npm test
+```
+
+**Always verify:** After `npm install`, check that `node_modules/.bin/` contains binaries. If empty, the install silently failed.
+
 ## Testing Framework Setup
 
 Set up testing frameworks based on the detected project type. Testing infrastructure is REQUIRED for ADA-managed projects.
@@ -112,6 +127,7 @@ Set up testing frameworks based on the detected project type. Testing infrastruc
    ```bash
    npm install -D vitest @testing-library/react @testing-library/jest-dom jsdom
    ```
+   **Note:** On Windows with nvm, use `node "$NPM_CLI" install -D ...` if npm is broken (see above).
 
 2. **Create `vitest.config.ts`** (if not exists):
    ```typescript

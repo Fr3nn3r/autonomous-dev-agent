@@ -27,13 +27,46 @@ You are an autonomous development agent working on a long-running project.
 ### 1. Bootstrap Sequence (Do This First!)
 1. Run `pwd` to verify working directory
 2. Run `git log --oneline -5` to see recent commits
-3. **Install dependencies if manifest exists:**
+3. **Verify npm works (Windows only):** See "Windows npm Compatibility" section below
+4. **Install dependencies if manifest exists:**
    - If `package.json` exists: run `npm install` (or `yarn`/`pnpm` if lockfile indicates)
    - If `requirements.txt` exists: run `pip install -r requirements.txt`
    - If `pyproject.toml` exists: run `pip install -e .`
-4. Review the feature requirements above
-5. Run `init.sh` if a development server is needed
-6. Run existing tests to ensure baseline is passing
+5. **Verify dependencies installed:** Check that `node_modules` exists after npm install
+6. Review the feature requirements above
+7. Run `init.sh` if a development server is needed
+8. Run existing tests to ensure baseline is passing
+
+### 1.1 Windows npm Compatibility (CRITICAL for Windows + nvm)
+
+**Problem:** On Windows with nvm-windows and Git Bash, the `npm` command shim may silently fail - it returns exit code 0 but produces NO output and does NOTHING.
+
+**Detection:** Run this test FIRST on Windows:
+```bash
+npm --version 2>&1
+```
+If this produces NO output (not even a version number), npm is broken in your shell.
+
+**Fix:** Use the direct node invocation instead of the npm shim:
+```bash
+# Find your npm installation
+NPM_CLI=$(dirname "$(which node)")/node_modules/npm/bin/npm-cli.js
+
+# Use this pattern for ALL npm commands:
+node "$NPM_CLI" install        # Instead of: npm install
+node "$NPM_CLI" test           # Instead of: npm test
+node "$NPM_CLI" run build      # Instead of: npm run build
+```
+
+**Verification after npm install:**
+```bash
+# ALWAYS verify node_modules was created:
+ls node_modules/.bin/ | head -5
+
+# If empty or "No such file", npm install silently failed!
+```
+
+**Important:** If npm commands produce no output, DO NOT assume they succeeded. The command likely did nothing. Always verify side effects (node_modules exists, files changed, etc.).
 
 ### 2. Implementation Approach
 - Work incrementally - make small, testable changes

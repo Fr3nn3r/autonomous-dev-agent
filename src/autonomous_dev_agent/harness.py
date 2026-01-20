@@ -581,7 +581,6 @@ class AutonomousHarness:
         console.print(Panel(
             f"[bold]Sessions run:[/bold] {self.total_sessions}\n"
             f"[bold]Features completed:[/bold] {completed}/{len(self.backlog.features)}\n"
-            f"[bold]Total cost:[/bold] ${cost_summary.total_cost_usd:.4f}\n"
             f"[bold]Total tokens:[/bold] {CostTracker.format_tokens(cost_summary.total_input_tokens)} in / "
             f"{CostTracker.format_tokens(cost_summary.total_output_tokens)} out",
             title="Summary"
