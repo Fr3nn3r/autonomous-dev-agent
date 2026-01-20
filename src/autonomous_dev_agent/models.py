@@ -853,6 +853,59 @@ class LogEntryType(str, Enum):
     CONTEXT_UPDATE = "context_update"
     ERROR = "error"
     SESSION_END = "session_end"
+    RAW_OUTPUT = "raw_output"  # For CLI mode bulk output
+
+
+# =============================================================================
+# Session Event Models (for turn-level logging)
+# =============================================================================
+
+
+class SessionEvent(BaseModel):
+    """Base class for session events emitted during agent execution.
+
+    These events are emitted by sessions and consumed by the orchestrator
+    for turn-level logging. They enable detailed observability of agent behavior.
+    """
+    event_type: str = Field(..., description="Type of event: assistant, tool_result, etc.")
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+
+class AssistantMessageEvent(SessionEvent):
+    """Event emitted when the assistant produces a message or tool call.
+
+    Contains the content, any tool calls being made, and optional thinking.
+    """
+    event_type: str = "assistant"
+    content: str = Field(default="", description="Text content of the message")
+    tool_calls: list[dict] = Field(
+        default_factory=list,
+        description="List of tool calls with name and input"
+    )
+    thinking: Optional[str] = Field(
+        default=None,
+        description="Extended thinking/reasoning content if available"
+    )
+
+
+class ToolResultEvent(SessionEvent):
+    """Event emitted when a tool returns a result.
+
+    Contains the tool call ID, tool name, input, output, and optional metadata.
+    """
+    event_type: str = "tool_result"
+    tool_call_id: str = Field(..., description="ID of the tool call this result is for")
+    tool: str = Field(..., description="Name of the tool (Read, Write, Bash, etc.)")
+    input_data: dict = Field(default_factory=dict, description="Tool input parameters")
+    output: str = Field(default="", description="Tool output/result")
+    duration_ms: Optional[int] = Field(
+        default=None,
+        description="Execution duration in milliseconds"
+    )
+    file_changed: Optional[str] = Field(
+        default=None,
+        description="File path if a file was modified by this tool"
+    )
 
 
 class ProjectContext(BaseModel):

@@ -17,7 +17,8 @@ from rich.panel import Panel
 
 from ..models import (
     HarnessConfig, Feature, Backlog, ProgressEntry,
-    RetryConfig, ErrorCategory, SessionOutcome, QualityGates
+    RetryConfig, ErrorCategory, SessionOutcome, QualityGates,
+    AssistantMessageEvent, ToolResultEvent
 )
 from ..protocols import GitOperations, ProgressLog
 from ..validators import QualityGateValidator
@@ -246,9 +247,32 @@ class SessionOrchestrator:
         return False
 
     def _on_message(self, message: Any) -> None:
-        """Handle streaming messages from the agent."""
-        # For now, just print text messages
-        if hasattr(message, 'text'):
+        """Handle streaming messages from the agent.
+
+        Handles both:
+        - Structured events (AssistantMessageEvent, ToolResultEvent) for logging
+        - Legacy text messages for display
+        """
+        # Handle structured events for turn-level logging
+        if isinstance(message, AssistantMessageEvent):
+            if self._current_session_logger:
+                self._current_session_logger.log_assistant(
+                    content=message.content,
+                    tool_calls=message.tool_calls,
+                    thinking=message.thinking
+                )
+        elif isinstance(message, ToolResultEvent):
+            if self._current_session_logger:
+                self._current_session_logger.log_tool_result(
+                    tool_call_id=message.tool_call_id,
+                    tool=message.tool,
+                    input_data=message.input_data,
+                    output=message.output,
+                    duration_ms=message.duration_ms,
+                    file_changed=message.file_changed
+                )
+        # Legacy: print text for display (SDK returns these in addition to events)
+        elif hasattr(message, 'text'):
             console.print(message.text, end="")
 
     async def run_initializer(self, backlog: Backlog) -> "SessionResult":
@@ -308,6 +332,16 @@ class SessionOrchestrator:
         )
 
         result = await session.run(prompt, on_message=self._on_message)
+
+        # For CLI mode, log the raw output (CLI doesn't stream individual turns)
+        from ..models import SessionMode
+        if self.config.session_mode == SessionMode.CLI and self._current_session_logger:
+            if result.raw_output or result.raw_error:
+                self._current_session_logger.log_raw_output(
+                    stdout=result.raw_output or "",
+                    stderr=result.raw_error,
+                    return_code=0 if result.success else 1
+                )
 
         # Log session end
         outcome = "success" if result.success else "failure"
@@ -413,6 +447,16 @@ class SessionOrchestrator:
 
         # Run the agent
         result = await session.run(prompt, on_message=self._on_message)
+
+        # For CLI mode, log the raw output (CLI doesn't stream individual turns)
+        from ..models import SessionMode
+        if self.config.session_mode == SessionMode.CLI and self._current_session_logger:
+            if result.raw_output or result.raw_error:
+                self._current_session_logger.log_raw_output(
+                    stdout=result.raw_output or "",
+                    stderr=result.raw_error,
+                    return_code=0 if result.success else 1
+                )
 
         # Handle result
         session_outcome = "success"

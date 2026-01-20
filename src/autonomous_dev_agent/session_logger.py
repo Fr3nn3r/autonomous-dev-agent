@@ -33,7 +33,14 @@ class SessionLogger:
         {"type": "assistant", "timestamp": "...", "turn": 1, "content": "..."}
         {"type": "tool_result", "timestamp": "...", "tool": "Read", ...}
         {"type": "session_end", "timestamp": "...", "outcome": "success", ...}
+
+    Output truncation:
+        By default, tool outputs are truncated at 50KB to prevent log bloat.
+        Set output_truncation_limit=0 to disable truncation entirely.
     """
+
+    # Default truncation limit (50KB)
+    DEFAULT_TRUNCATION_LIMIT = 50000
 
     def __init__(
         self,
@@ -43,7 +50,8 @@ class SessionLogger:
         feature_id: Optional[str] = None,
         feature_name: Optional[str] = None,
         model: str = "",
-        config: Optional[dict] = None
+        config: Optional[dict] = None,
+        output_truncation_limit: int = DEFAULT_TRUNCATION_LIMIT
     ):
         """Initialize session logger.
 
@@ -55,6 +63,7 @@ class SessionLogger:
             feature_name: Human-readable feature name
             model: Model being used
             config: Session configuration dict
+            output_truncation_limit: Max chars for tool output (0 to disable truncation)
         """
         self.workspace = workspace
         self.session_id = session_id
@@ -63,6 +72,7 @@ class SessionLogger:
         self.feature_name = feature_name
         self.model = model
         self.config = config or {}
+        self.output_truncation_limit = output_truncation_limit
 
         # Ensure workspace structure exists
         workspace.ensure_structure()
@@ -184,16 +194,21 @@ class SessionLogger:
             truncated: Whether output was truncated
             file_changed: File path if a file was modified
         """
+        # Apply truncation if configured
+        truncation_limit = self.output_truncation_limit
+        should_truncate = truncation_limit > 0 and len(output) > truncation_limit
+        output_to_log = output[:truncation_limit] if should_truncate else output
+
         entry = {
             "type": LogEntryType.TOOL_RESULT.value,
             "turn": self._turn,
             "tool_call_id": tool_call_id,
             "tool": tool,
             "input": input_data,
-            "output": output[:10000] if len(output) > 10000 else output,
+            "output": output_to_log,
             "output_length": len(output),
             "duration_ms": duration_ms,
-            "truncated": truncated or len(output) > 10000
+            "truncated": truncated or should_truncate
         }
 
         if file_changed:
@@ -268,6 +283,47 @@ class SessionLogger:
             "message": message,
             "raw_error": raw_error,
             "recoverable": recoverable
+        })
+
+    def log_raw_output(
+        self,
+        stdout: str,
+        stderr: Optional[str] = None,
+        return_code: Optional[int] = None
+    ) -> None:
+        """Log raw CLI output (used for CLI mode).
+
+        CLI mode buffers all output and returns it at the end rather than
+        streaming individual turns. This method captures the complete output
+        for debugging and analysis.
+
+        Args:
+            stdout: Standard output from CLI
+            stderr: Standard error from CLI (if any)
+            return_code: CLI exit code
+        """
+        # Apply truncation if configured
+        truncation_limit = self.output_truncation_limit
+        stdout_to_log = stdout
+        stderr_to_log = stderr
+
+        truncated = False
+        if truncation_limit > 0:
+            if len(stdout) > truncation_limit:
+                stdout_to_log = stdout[:truncation_limit]
+                truncated = True
+            if stderr and len(stderr) > truncation_limit:
+                stderr_to_log = stderr[:truncation_limit]
+                truncated = True
+
+        self._write_entry({
+            "type": LogEntryType.RAW_OUTPUT.value,
+            "stdout": stdout_to_log,
+            "stdout_length": len(stdout),
+            "stderr": stderr_to_log,
+            "stderr_length": len(stderr) if stderr else 0,
+            "return_code": return_code,
+            "truncated": truncated
         })
 
     def log_session_end(

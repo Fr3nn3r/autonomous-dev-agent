@@ -28,7 +28,10 @@ from typing import Optional, Callable, Any, List
 from pydantic import BaseModel
 
 from .cli_utils import find_claude_executable
-from .models import HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory, UsageStats
+from .models import (
+    HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory, UsageStats,
+    AssistantMessageEvent, ToolResultEvent
+)
 from .cost_tracker import CostTracker
 
 
@@ -641,23 +644,63 @@ class SDKSession(BaseSession):
 
                 all_messages.append(f"[{msg_type}] {str(msg_text)[:200] if msg_text else '(no text)'}")
 
-                # Format display based on message type
+                # Format display based on message type and emit structured events
                 if 'Assistant' in msg_type:
                     if tool_name:
                         print(f"\n[{timestamp}] Tool: {tool_name}", flush=True)
                         if tool_input:
                             input_str = str(tool_input)[:300]
                             safe_print(f"  Input: {input_str}")
+
+                        # Emit AssistantMessageEvent with tool call info
+                        if on_message:
+                            tool_call_id = data.get('tool_call_id') or data.get('id') or f"tc_{message_count}"
+                            tool_calls = [{
+                                "id": tool_call_id,
+                                "name": tool_name,
+                                "input": tool_input or {}
+                            }]
+                            event = AssistantMessageEvent(
+                                content=str(msg_text) if msg_text else "",
+                                tool_calls=tool_calls
+                            )
+                            on_message(event)
                     elif msg_text:
                         print(f"\n[{timestamp}] Claude:", flush=True)
                         display_text = str(msg_text)[:500].replace('\n', '\n  ')
                         safe_print(f"  {display_text}")
+
+                        # Emit AssistantMessageEvent for text content
+                        if on_message:
+                            event = AssistantMessageEvent(
+                                content=str(msg_text)
+                            )
+                            on_message(event)
                     else:
                         print(f"\n[{timestamp}] {msg_type}", flush=True)
                 elif 'User' in msg_type:
                     if tool_result:
                         result_str = str(tool_result)[:200]
                         safe_print(f"  Result: {result_str}...")
+
+                        # Emit ToolResultEvent
+                        if on_message:
+                            tool_call_id = data.get('tool_call_id') or data.get('id') or f"tc_{message_count}"
+                            # Determine file changed if it's a file-modifying tool
+                            file_changed = None
+                            if tool_name in ('Write', 'Edit', 'NotebookEdit'):
+                                file_changed = (
+                                    (tool_input or {}).get('file_path') or
+                                    (tool_input or {}).get('path')
+                                )
+                            event = ToolResultEvent(
+                                tool_call_id=tool_call_id,
+                                tool=tool_name or "unknown",
+                                input_data=tool_input or {},
+                                output=str(tool_result),
+                                file_changed=file_changed
+                            )
+                            on_message(event)
                     # Skip printing empty user messages
                 elif 'System' in msg_type:
                     subtype = data.get('subtype', '')
