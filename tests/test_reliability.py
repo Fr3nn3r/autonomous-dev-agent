@@ -12,7 +12,7 @@ from unittest.mock import Mock, patch, AsyncMock
 import asyncio
 
 from autonomous_dev_agent.models import (
-    ErrorCategory, RetryConfig, HarnessConfig, SessionMode
+    ErrorCategory, RetryConfig, HarnessConfig
 )
 from autonomous_dev_agent.session import classify_error, SessionResult
 

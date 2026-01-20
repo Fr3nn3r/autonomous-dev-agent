@@ -22,7 +22,6 @@ from typing import Optional, List, Tuple
 from rich.console import Console
 from rich.panel import Panel
 
-from .cli_utils import find_claude_executable
 from .models import (
     Backlog, Feature, FeatureStatus, HarnessConfig,
     ProgressEntry, ErrorCategory, CheckpointState, VerificationConfig
@@ -187,14 +186,14 @@ class AutonomousHarness:
                     f"{len(git_status.untracked_files)} untracked"
                 )
 
-        # 2. Check Claude CLI using robust cross-platform discovery
-        claude_path = find_claude_executable()
-        if claude_path:
-            console.print(f"  [green]{SYM_OK}[/green] Claude CLI found: {claude_path}")
+        # 2. Check ANTHROPIC_API_KEY is set (required for SDK mode)
+        import os
+        if os.environ.get("ANTHROPIC_API_KEY"):
+            console.print(f"  [green]{SYM_OK}[/green] ANTHROPIC_API_KEY is set")
         else:
             errors.append(
-                "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code\n"
-                "           After installing, restart your terminal for PATH changes to take effect."
+                "ANTHROPIC_API_KEY environment variable not set.\n"
+                "           Set it with: export ANTHROPIC_API_KEY=your-key-here"
             )
 
         # 3. Check backlog file exists and is valid
@@ -242,13 +241,12 @@ class AutonomousHarness:
             else:
                 errors.append(f"Required tool not found: {tool}")
 
-        # 6. Check ANTHROPIC_API_KEY if using SDK mode
-        if self.config.session_mode.value == "sdk":
-            import os
-            if os.environ.get("ANTHROPIC_API_KEY"):
-                console.print(f"  [green]{SYM_OK}[/green] ANTHROPIC_API_KEY set")
-            else:
-                warnings.append("ANTHROPIC_API_KEY not set (required for SDK mode)")
+        # 6. Double-check ANTHROPIC_API_KEY is set
+        # (Already checked earlier, but verify again for completeness)
+        import os
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            # Only warn here since we errored earlier
+            pass
 
         # Print warnings
         for warning in warnings:

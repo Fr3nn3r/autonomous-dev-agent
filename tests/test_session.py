@@ -1,9 +1,7 @@
 """Tests for session management classes.
 
 Tests cover:
-- detect_input_prompt function
 - BaseSession abstract class
-- CLISession implementation
 - SDKSession implementation
 - MockSession implementation
 - create_session factory function
@@ -17,84 +15,16 @@ from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 
 from autonomous_dev_agent.models import (
-    HarnessConfig, SessionMode, SessionState, ErrorCategory
+    HarnessConfig, SessionState, ErrorCategory
 )
 from autonomous_dev_agent.session import (
-    detect_input_prompt,
     SessionResult,
     BaseSession,
-    CLISession,
     SDKSession,
     MockSession,
     create_session,
     SessionManager,
-    CLI_INPUT_PROMPTS,
 )
-
-
-# =============================================================================
-# Tests for detect_input_prompt
-# =============================================================================
-
-class TestDetectInputPrompt:
-    """Tests for CLI input prompt detection."""
-
-    def test_detects_proceed_prompt(self):
-        """Should detect 'Do you want to proceed?' prompt."""
-        text = "Some output\nDo you want to proceed?\nMore text"
-        result = detect_input_prompt(text)
-        assert result is not None
-        assert "proceed" in result.lower()
-
-    def test_detects_yes_no_brackets(self):
-        """Should detect [y/N] and [Y/n] prompts."""
-        assert detect_input_prompt("Continue? [y/N]") is not None
-        assert detect_input_prompt("Proceed? [Y/n]") is not None
-
-    def test_detects_press_enter(self):
-        """Should detect 'Press Enter to continue' prompt."""
-        text = "Press Enter to continue"
-        result = detect_input_prompt(text)
-        assert result is not None
-
-    def test_detects_allow_action(self):
-        """Should detect 'Allow this action?' prompt."""
-        text = "Allow this action?"
-        result = detect_input_prompt(text)
-        assert result is not None
-
-    def test_detects_permission_required(self):
-        """Should detect 'Permission required' prompt."""
-        text = "Permission required for this operation"
-        result = detect_input_prompt(text)
-        assert result is not None
-
-    def test_detects_type_yes(self):
-        """Should detect 'Type yes to confirm' prompt."""
-        text = "Type 'yes' to confirm"
-        result = detect_input_prompt(text)
-        assert result is not None
-
-    def test_detects_interactive_menu(self):
-        """Should detect interactive menu with arrow."""
-        text = "❯ 1. Yes\n  2. No"
-        result = detect_input_prompt(text)
-        assert result is not None
-
-    def test_returns_none_for_normal_output(self):
-        """Should return None for normal output without prompts."""
-        text = "Building project...\nCompiling files...\nDone!"
-        result = detect_input_prompt(text)
-        assert result is None
-
-    def test_returns_none_for_empty_string(self):
-        """Should return None for empty string."""
-        assert detect_input_prompt("") is None
-
-    def test_case_insensitive(self):
-        """Should be case-insensitive."""
-        assert detect_input_prompt("DO YOU WANT TO PROCEED?") is not None
-        assert detect_input_prompt("press enter to continue") is not None
 
 
 # =============================================================================
@@ -225,82 +155,6 @@ class TestBaseSessionStateMangement:
 
 
 # =============================================================================
-# Tests for CLISession
-# =============================================================================
-
-class TestCLISession:
-    """Tests for CLI session implementation."""
-
-    def test_initialization(self, tmp_path):
-        """Should initialize with correct config."""
-        config = HarnessConfig(session_mode=SessionMode.CLI)
-        session = CLISession(config, tmp_path, "cli-test")
-
-        assert session.config == config
-        assert session.project_path == tmp_path
-        assert session.session_id == "cli-test"
-        assert session.context_usage_percent == 0.0
-
-    def test_find_claude_executable_returns_path(self, tmp_path):
-        """Should find claude executable when available via shared utility."""
-        with patch('autonomous_dev_agent.cli_utils.shutil.which') as mock_which:
-            mock_which.return_value = "/usr/local/bin/claude"
-            from autonomous_dev_agent.cli_utils import find_claude_executable
-            result = find_claude_executable()
-            assert result == "/usr/local/bin/claude"
-
-    def test_find_claude_executable_returns_none_when_missing(self, tmp_path):
-        """Should return None when claude not found via shared utility."""
-        # Patch at the module level to ensure complete isolation
-        with patch('autonomous_dev_agent.cli_utils.shutil.which', return_value=None):
-            with patch('autonomous_dev_agent.cli_utils.os.environ.get', return_value=""):
-                with patch('autonomous_dev_agent.cli_utils.Path') as mock_path_class:
-                    # Make Path.home() and all path operations return non-existent paths
-                    mock_path = MagicMock()
-                    mock_path.exists.return_value = False
-                    mock_path.__truediv__ = lambda self, other: mock_path
-                    mock_path_class.return_value = mock_path
-                    mock_path_class.home.return_value = mock_path
-
-                    from autonomous_dev_agent.cli_utils import find_claude_executable
-                    result = find_claude_executable()
-                    assert result is None
-
-    @pytest.mark.asyncio
-    async def test_run_session_fails_without_claude(self, tmp_path):
-        """Should fail gracefully when claude not found."""
-        config = HarnessConfig(session_mode=SessionMode.CLI)
-        session = CLISession(config, tmp_path)
-
-        with patch('autonomous_dev_agent.session.find_claude_executable', return_value=None):
-            result = await session._run_session("test prompt")
-
-            assert result.success is False
-            assert "not found" in result.error_message.lower()
-
-    @pytest.mark.asyncio
-    async def test_run_applies_timeout(self, tmp_path):
-        """Should apply session timeout."""
-        config = HarnessConfig(
-            session_mode=SessionMode.CLI,
-            session_timeout_seconds=1  # Very short timeout
-        )
-        session = CLISession(config, tmp_path)
-
-        # Mock _run_session to take longer than timeout
-        async def slow_session(*args, **kwargs):
-            await asyncio.sleep(10)
-            return SessionResult(session_id="test", success=True, context_usage_percent=0)
-
-        with patch.object(session, '_run_session', side_effect=slow_session):
-            result = await session.run("test prompt")
-
-            assert result.success is False
-            assert result.handoff_requested is True
-            assert "timeout" in result.error_message.lower()
-
-
-# =============================================================================
 # Tests for SDKSession
 # =============================================================================
 
@@ -309,7 +163,7 @@ class TestSDKSession:
 
     def test_initialization(self, tmp_path):
         """Should initialize with correct config."""
-        config = HarnessConfig(session_mode=SessionMode.SDK)
+        config = HarnessConfig()
         session = SDKSession(config, tmp_path, "sdk-test")
 
         assert session.config == config
@@ -319,7 +173,7 @@ class TestSDKSession:
     @pytest.mark.asyncio
     async def test_falls_back_to_mock_without_sdk(self, tmp_path):
         """Should fall back to mock when SDK not installed."""
-        config = HarnessConfig(session_mode=SessionMode.SDK)
+        config = HarnessConfig()
         session = SDKSession(config, tmp_path)
 
         # SDK import will fail, triggering mock fallback
@@ -334,7 +188,6 @@ class TestSDKSession:
     async def test_run_applies_timeout(self, tmp_path):
         """Should apply session timeout."""
         config = HarnessConfig(
-            session_mode=SessionMode.SDK,
             session_timeout_seconds=1
         )
         session = SDKSession(config, tmp_path)
@@ -397,17 +250,9 @@ class TestMockSession:
 class TestCreateSessionFactory:
     """Tests for create_session factory function."""
 
-    def test_creates_cli_session_for_cli_mode(self, tmp_path):
-        """Should create CLISession when mode is CLI."""
-        config = HarnessConfig(session_mode=SessionMode.CLI)
-        session = create_session(config, tmp_path, "test-id")
-
-        assert isinstance(session, CLISession)
-        assert session.session_id == "test-id"
-
-    def test_creates_sdk_session_for_sdk_mode(self, tmp_path):
-        """Should create SDKSession when mode is SDK."""
-        config = HarnessConfig(session_mode=SessionMode.SDK)
+    def test_creates_sdk_session(self, tmp_path):
+        """Should create SDKSession."""
+        config = HarnessConfig()
         session = create_session(config, tmp_path, "test-id")
 
         assert isinstance(session, SDKSession)
@@ -415,7 +260,7 @@ class TestCreateSessionFactory:
 
     def test_generates_session_id_if_not_provided(self, tmp_path):
         """Should generate session ID if not provided."""
-        config = HarnessConfig(session_mode=SessionMode.CLI)
+        config = HarnessConfig()
         session = create_session(config, tmp_path)
 
         assert session.session_id is not None
@@ -441,7 +286,7 @@ class TestSessionManager:
 
     def test_create_session_increments_count(self, tmp_path):
         """Should increment session count on each create."""
-        config = HarnessConfig(session_mode=SessionMode.CLI)
+        config = HarnessConfig()
         manager = SessionManager(config, tmp_path)
 
         session1 = manager.create_session()
@@ -450,17 +295,12 @@ class TestSessionManager:
         session2 = manager.create_session()
         assert manager.session_count == 2
 
-    def test_create_session_returns_correct_type(self, tmp_path):
-        """Should create correct session type based on mode."""
-        cli_config = HarnessConfig(session_mode=SessionMode.CLI)
-        cli_manager = SessionManager(cli_config, tmp_path)
-        cli_session = cli_manager.create_session()
-        assert isinstance(cli_session, CLISession)
-
-        sdk_config = HarnessConfig(session_mode=SessionMode.SDK)
-        sdk_manager = SessionManager(sdk_config, tmp_path)
-        sdk_session = sdk_manager.create_session()
-        assert isinstance(sdk_session, SDKSession)
+    def test_create_session_returns_sdk_session(self, tmp_path):
+        """Should create SDKSession."""
+        config = HarnessConfig()
+        manager = SessionManager(config, tmp_path)
+        session = manager.create_session()
+        assert isinstance(session, SDKSession)
 
     def test_create_session_sets_current_session(self, tmp_path):
         """Should set current_session on create."""
@@ -582,11 +422,9 @@ class TestSessionIntegration:
         """All session types should use same state file location."""
         config = HarnessConfig()
 
-        cli = CLISession(config, tmp_path)
         sdk = SDKSession(config, tmp_path)
         mock = MockSession(config, tmp_path)
 
         # All should use the same state file
-        assert cli._state_file == sdk._state_file
         assert sdk._state_file == mock._state_file
-        assert cli._state_file == tmp_path / ".ada_session_state.json"
+        assert sdk._state_file == tmp_path / ".ada_session_state.json"

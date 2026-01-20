@@ -226,12 +226,6 @@ class SessionState(BaseModel):
     handoff_notes: Optional[str] = None
 
 
-class SessionMode(str, Enum):
-    """How to invoke Claude for agent sessions."""
-    CLI = "cli"      # Direct CLI invocation (uses Claude subscription, more reliable)
-    SDK = "sdk"      # Claude Agent SDK (uses API credits, streaming but less reliable on Windows)
-
-
 class RetryConfig(BaseModel):
     """Configuration for retry logic with exponential backoff.
 
@@ -275,16 +269,10 @@ class HarnessConfig(BaseModel):
         description="Trigger handoff when context reaches this percentage"
     )
 
-    # Session mode - SDK is default for better observability and control
-    session_mode: SessionMode = Field(
-        default=SessionMode.SDK,
-        description="How to invoke Claude: 'cli' (direct CLI, uses subscription, more reliable) or 'sdk' (Agent SDK, uses API credits, better observability)"
-    )
-
     # Model settings - default to Opus for maximum capability
     model: str = Field(
         default="claude-opus-4-5-20251101",
-        description="Model to use. CLI mode supports any model, SDK may have restrictions."
+        description="Model to use for agent sessions"
     )
 
     # Paths
@@ -318,22 +306,12 @@ class HarnessConfig(BaseModel):
         description="Maximum duration per session before forced handoff"
     )
 
-    # SDK permissions (only used in SDK mode)
+    # SDK permissions
     allowed_tools: list[str] = Field(
         default_factory=lambda: [
             "Read", "Write", "Edit", "Bash", "Glob", "Grep",
             "WebFetch", "WebSearch"
         ]
-    )
-
-    # CLI options
-    cli_max_turns: int = Field(
-        default=100,
-        description="Maximum agentic turns for CLI mode (prevents runaway sessions)"
-    )
-    cli_read_timeout_seconds: int = Field(
-        default=120,
-        description="Per-chunk read timeout in seconds. If no output for this long, check if stuck."
     )
 
     # Quality gates - defaults applied to all features unless overridden
@@ -853,7 +831,6 @@ class LogEntryType(str, Enum):
     CONTEXT_UPDATE = "context_update"
     ERROR = "error"
     SESSION_END = "session_end"
-    RAW_OUTPUT = "raw_output"  # For CLI mode bulk output
 
 
 # =============================================================================

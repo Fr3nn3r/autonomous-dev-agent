@@ -27,6 +27,9 @@ from ..alert_manager import AlertManager, create_handoff_alert
 from ..session_history import SessionHistory
 from ..workspace import WorkspaceManager
 from ..session_logger import SessionLogger
+from ..api.websocket import (
+    emit_agent_message, emit_tool_call, emit_tool_result, emit_context_update
+)
 
 if TYPE_CHECKING:
     from ..session import SessionManager, BaseSession, SessionResult
@@ -94,6 +97,10 @@ class SessionOrchestrator:
 
         # Session logger for current session
         self._current_session_logger: Optional[SessionLogger] = None
+
+        # Live monitoring state
+        self._current_session_id: Optional[str] = None
+        self._turn_count: int = 0
 
     def set_completion_handler(self, handler: "FeatureCompletionHandler") -> None:
         """Set the feature completion handler."""
@@ -246,6 +253,16 @@ class SessionOrchestrator:
 
         return False
 
+    def _summarize_content(self, content: Optional[str], max_length: int = 100) -> str:
+        """Create a brief summary of content for display."""
+        if not content:
+            return ""
+        # Take first line or first max_length chars
+        first_line = content.split('\n')[0]
+        if len(first_line) > max_length:
+            return first_line[:max_length] + "..."
+        return first_line
+
     def _on_message(self, message: Any) -> None:
         """Handle streaming messages from the agent.
 
@@ -255,12 +272,42 @@ class SessionOrchestrator:
         """
         # Handle structured events for turn-level logging
         if isinstance(message, AssistantMessageEvent):
+            self._turn_count += 1
+
             if self._current_session_logger:
                 self._current_session_logger.log_assistant(
                     content=message.content,
                     tool_calls=message.tool_calls,
                     thinking=message.thinking
                 )
+
+            # Emit to WebSocket for live monitoring
+            if self._current_session_id:
+                tool_call_names = []
+                if message.tool_calls:
+                    for tc in message.tool_calls:
+                        tool_name = tc.get('name', 'unknown') if isinstance(tc, dict) else getattr(tc, 'name', 'unknown')
+                        tool_call_names.append(tool_name)
+
+                        # Also emit individual tool.call events
+                        call_id = tc.get('id', '') if isinstance(tc, dict) else getattr(tc, 'id', '')
+                        params = tc.get('input', {}) if isinstance(tc, dict) else getattr(tc, 'input', {})
+
+                        asyncio.create_task(emit_tool_call(
+                            session_id=self._current_session_id,
+                            call_id=call_id,
+                            tool_name=tool_name,
+                            parameters=params if isinstance(params, dict) else {}
+                        ))
+
+                asyncio.create_task(emit_agent_message(
+                    session_id=self._current_session_id,
+                    content=(message.content or "")[:500],
+                    summary=self._summarize_content(message.content),
+                    tool_calls=tool_call_names,
+                    turn=self._turn_count
+                ))
+
         elif isinstance(message, ToolResultEvent):
             if self._current_session_logger:
                 self._current_session_logger.log_tool_result(
@@ -271,6 +318,22 @@ class SessionOrchestrator:
                     duration_ms=message.duration_ms,
                     file_changed=message.file_changed
                 )
+
+            # Emit to WebSocket for live monitoring
+            if self._current_session_id:
+                # Determine success based on output content
+                output_str = str(message.output) if message.output else ""
+                is_error = "error" in output_str.lower() or "exception" in output_str.lower()
+
+                asyncio.create_task(emit_tool_result(
+                    session_id=self._current_session_id,
+                    call_id=message.tool_call_id or "",
+                    tool_name=message.tool or "unknown",
+                    success=not is_error,
+                    result=output_str[:500] if output_str else "",
+                    duration_ms=message.duration_ms
+                ))
+
         # Legacy: print text for display (SDK returns these in addition to events)
         elif hasattr(message, 'text'):
             console.print(message.text, end="")
@@ -318,7 +381,6 @@ class SessionOrchestrator:
             model=self.config.model,
             config={
                 "context_threshold_percent": self.config.context_threshold_percent,
-                "session_mode": self.config.session_mode.value,
             }
         )
         self._current_session_logger.log_session_start()
@@ -331,17 +393,11 @@ class SessionOrchestrator:
             }
         )
 
-        result = await session.run(prompt, on_message=self._on_message)
+        # Set live monitoring state
+        self._current_session_id = session.session_id
+        self._turn_count = 0
 
-        # For CLI mode, log the raw output (CLI doesn't stream individual turns)
-        from ..models import SessionMode
-        if self.config.session_mode == SessionMode.CLI and self._current_session_logger:
-            if result.raw_output or result.raw_error:
-                self._current_session_logger.log_raw_output(
-                    stdout=result.raw_output or "",
-                    stderr=result.raw_error,
-                    return_code=0 if result.success else 1
-                )
+        result = await session.run(prompt, on_message=self._on_message)
 
         # Log session end
         outcome = "success" if result.success else "failure"
@@ -350,6 +406,10 @@ class SessionOrchestrator:
             reason="Initialization complete" if result.success else result.error_message
         )
         self._current_session_logger = None
+
+        # Clear live monitoring state
+        self._current_session_id = None
+        self._turn_count = 0
 
         if result.success:
             self.progress.append_entry(ProgressEntry(
@@ -426,8 +486,6 @@ class SessionOrchestrator:
             model=selected_model,
             config={
                 "context_threshold_percent": self.config.context_threshold_percent,
-                "session_mode": self.config.session_mode.value,
-                "max_turns": self.config.cli_max_turns,
             }
         )
         self._current_session_logger.log_session_start()
@@ -445,18 +503,12 @@ class SessionOrchestrator:
         if self._recovery_manager:
             self._recovery_manager.save_session_state(session, feature)
 
+        # Set live monitoring state
+        self._current_session_id = session.session_id
+        self._turn_count = 0
+
         # Run the agent
         result = await session.run(prompt, on_message=self._on_message)
-
-        # For CLI mode, log the raw output (CLI doesn't stream individual turns)
-        from ..models import SessionMode
-        if self.config.session_mode == SessionMode.CLI and self._current_session_logger:
-            if result.raw_output or result.raw_error:
-                self._current_session_logger.log_raw_output(
-                    stdout=result.raw_output or "",
-                    stderr=result.raw_error,
-                    return_code=0 if result.success else 1
-                )
 
         # Handle result
         session_outcome = "success"
@@ -509,6 +561,17 @@ class SessionOrchestrator:
                     cost_usd=result.usage_stats.cost_usd
                 )
 
+                # Also emit to WebSocket for live monitoring
+                if self._current_session_id:
+                    asyncio.create_task(emit_context_update(
+                        session_id=self._current_session_id,
+                        input_tokens=result.usage_stats.input_tokens,
+                        output_tokens=result.usage_stats.output_tokens,
+                        total_tokens=result.usage_stats.input_tokens + result.usage_stats.output_tokens,
+                        context_percent=result.context_usage_percent,
+                        cost_usd=result.usage_stats.cost_usd
+                    ))
+
             # Log any errors
             if result.error_message and result.error_category:
                 self._current_session_logger.log_error(
@@ -524,6 +587,10 @@ class SessionOrchestrator:
                 commit_hash=commit_hash
             )
             self._current_session_logger = None
+
+        # Clear live monitoring state
+        self._current_session_id = None
+        self._turn_count = 0
 
         # Restore original model setting
         self.config.model = original_model

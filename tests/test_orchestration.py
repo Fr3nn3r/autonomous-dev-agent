@@ -13,7 +13,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 
 from autonomous_dev_agent.models import (
-    HarnessConfig, SessionMode, SessionState, Feature, Backlog,
+    HarnessConfig, SessionState, Feature, Backlog,
     FeatureCategory, FeatureStatus, ProgressEntry, SessionOutcome,
     QualityGates
 )

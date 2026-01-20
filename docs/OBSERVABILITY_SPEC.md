@@ -535,8 +535,7 @@ With full session logs, you can later build:
 - [ ] `ada migrate` for existing projects
 
 ### Phase 3: Integration
-- [ ] Wire logging into CLISession
-- [ ] Wire logging into SDKSession
+- [x] Wire logging into SDKSession
 - [ ] Update index.json on session end
 - [ ] Implement 100MB rotation
 

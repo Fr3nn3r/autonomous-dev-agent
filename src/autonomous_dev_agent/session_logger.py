@@ -285,47 +285,6 @@ class SessionLogger:
             "recoverable": recoverable
         })
 
-    def log_raw_output(
-        self,
-        stdout: str,
-        stderr: Optional[str] = None,
-        return_code: Optional[int] = None
-    ) -> None:
-        """Log raw CLI output (used for CLI mode).
-
-        CLI mode buffers all output and returns it at the end rather than
-        streaming individual turns. This method captures the complete output
-        for debugging and analysis.
-
-        Args:
-            stdout: Standard output from CLI
-            stderr: Standard error from CLI (if any)
-            return_code: CLI exit code
-        """
-        # Apply truncation if configured
-        truncation_limit = self.output_truncation_limit
-        stdout_to_log = stdout
-        stderr_to_log = stderr
-
-        truncated = False
-        if truncation_limit > 0:
-            if len(stdout) > truncation_limit:
-                stdout_to_log = stdout[:truncation_limit]
-                truncated = True
-            if stderr and len(stderr) > truncation_limit:
-                stderr_to_log = stderr[:truncation_limit]
-                truncated = True
-
-        self._write_entry({
-            "type": LogEntryType.RAW_OUTPUT.value,
-            "stdout": stdout_to_log,
-            "stdout_length": len(stdout),
-            "stderr": stderr_to_log,
-            "stderr_length": len(stderr) if stderr else 0,
-            "return_code": return_code,
-            "truncated": truncated
-        })
-
     def log_session_end(
         self,
         outcome: str,

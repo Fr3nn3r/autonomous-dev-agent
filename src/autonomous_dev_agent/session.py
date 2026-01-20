@@ -1,35 +1,27 @@
 """Session management for the Claude Agent.
 
-Supports two modes:
-- CLI: Direct invocation of `claude` command (uses Claude subscription, reliable)
-- SDK: Claude Agent SDK (uses API credits, streaming but less reliable on Windows)
+Uses the Claude Agent SDK for agent sessions with API credits.
 
 Architecture:
 - BaseSession: Abstract base class with common session logic
-- CLISession: CLI-specific implementation
 - SDKSession: SDK-specific implementation
 - MockSession: For testing without SDK installed
-- create_session(): Factory function to create appropriate session type
+- create_session(): Factory function to create SDK sessions
 """
 
 import asyncio
 import json
 import os
-import re
-import shutil
-import subprocess
-import sys
 import uuid
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
-from typing import Optional, Callable, Any, List
+from typing import Optional, Callable, Any
 
 from pydantic import BaseModel
 
-from .cli_utils import find_claude_executable
 from .models import (
-    HarnessConfig, SessionState, Feature, SessionMode, ErrorCategory, UsageStats,
+    HarnessConfig, SessionState, Feature, ErrorCategory, UsageStats,
     AssistantMessageEvent, ToolResultEvent
 )
 from .cost_tracker import CostTracker
@@ -49,43 +41,6 @@ def safe_print(text: str, **kwargs) -> None:
         # Windows cp1252 can't handle some Unicode chars
         safe_text = text.encode('ascii', errors='replace').decode('ascii')
         print(safe_text, **kwargs)
-
-
-# =============================================================================
-# Input Prompt Detection (CLI mode)
-# =============================================================================
-
-# Patterns that indicate CLI is waiting for user input
-CLI_INPUT_PROMPTS = [
-    r"Do you want to proceed\?",
-    r"❯\s*\d+\.\s*(Yes|No)",  # Interactive menu
-    r"\[y/N\]",
-    r"\[Y/n\]",
-    r"Press Enter to continue",
-    r"Waiting for confirmation",
-    r"Allow this action\?",
-    r"Permission required",
-    r"Type 'yes' to confirm",
-]
-
-# Compile patterns for efficiency
-CLI_INPUT_PATTERNS = [re.compile(p, re.IGNORECASE) for p in CLI_INPUT_PROMPTS]
-
-
-def detect_input_prompt(text: str) -> Optional[str]:
-    """Detect if CLI output contains a prompt waiting for user input.
-
-    Args:
-        text: The CLI output text to check
-
-    Returns:
-        The matched prompt pattern if found, None otherwise
-    """
-    for pattern in CLI_INPUT_PATTERNS:
-        match = pattern.search(text)
-        if match:
-            return match.group(0)
-    return None
 
 
 # =============================================================================
@@ -318,263 +273,14 @@ class BaseSession(ABC):
 
 
 # =============================================================================
-# CLI Session Implementation
-# =============================================================================
-
-class CLISession(BaseSession):
-    """Session implementation using direct CLI invocation.
-
-    Uses the user's Claude subscription, not API credits.
-    More reliable on Windows than the SDK.
-
-    Features:
-    - Streams output in real-time for visibility
-    - Detects permission prompts and input requests
-    - Per-chunk read timeout to detect stuck processes
-    - Graceful handling of blocking scenarios
-    """
-
-    async def _run_session(
-        self,
-        prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
-    ) -> SessionResult:
-        """Run session using direct CLI invocation with streaming output."""
-        result = SessionResult(
-            session_id=self.session_id,
-            success=False,
-            context_usage_percent=0.0
-        )
-
-        # Find the claude executable using robust cross-platform discovery
-        claude_path = find_claude_executable()
-        if not claude_path:
-            result.error_message = (
-                "Claude CLI not found. Install with: npm install -g @anthropic-ai/claude-code\n"
-                "After installing, you may need to restart your terminal for PATH changes to take effect."
-            )
-            print(f"\n[ERROR] {result.error_message}")
-            return result
-
-        # Per-chunk read timeout (seconds)
-        read_timeout = self.config.cli_read_timeout_seconds
-        session_timeout = self.config.session_timeout_seconds
-
-        print(f"\n[CLI] Starting session with model: {self.config.model}")
-        print(f"[CLI] Working directory: {self.project_path}")
-        print(f"[CLI] Max turns: {self.config.cli_max_turns}")
-        print(f"[CLI] Session timeout: {session_timeout}s ({session_timeout // 60}m)")
-        print(f"[CLI] Note: CLI buffers output - no streaming until complete")
-        print(f"[CLI] Using executable: {claude_path}")
-        print(f"[CLI] Prompt length: {len(prompt)} chars")
-
-        try:
-            # Write prompt to a temp file for debugging
-            import tempfile
-            prompt_file = Path(tempfile.gettempdir()) / f"ada_prompt_{self.session_id}.txt"
-            prompt_file.write_text(prompt, encoding='utf-8')
-
-            # Build command using stdin for the prompt
-            cmd_stdin = [
-                claude_path,
-                "--model", self.config.model,
-                "--max-turns", str(self.config.cli_max_turns),
-                "--dangerously-skip-permissions",
-                "-p", "-",  # Read prompt from stdin
-            ]
-
-            print(f"[CLI] Prompt saved to: {prompt_file}")
-            print(f"[CLI] Running: {' '.join(cmd_stdin)}")
-
-            # Create environment without ANTHROPIC_API_KEY to force subscription usage
-            cli_env = os.environ.copy()
-            if "ANTHROPIC_API_KEY" in cli_env:
-                del cli_env["ANTHROPIC_API_KEY"]
-                print(f"[CLI] Removed ANTHROPIC_API_KEY from environment to use subscription")
-
-            # Run claude CLI with separate stdout/stderr streams
-            process = await asyncio.create_subprocess_exec(
-                *cmd_stdin,
-                cwd=str(self.project_path),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=cli_env,
-            )
-
-            # Send prompt via stdin and close stdin to signal end of input
-            process.stdin.write(prompt.encode('utf-8'))
-            await process.stdin.drain()
-            process.stdin.close()
-            await process.stdin.wait_closed()
-
-            print(f"[CLI] Prompt sent, reading output with {read_timeout}s timeout per chunk...")
-
-            # Stream output with per-read timeout to detect blocking
-            stdout_chunks: List[str] = []
-            stderr_chunks: List[str] = []
-            last_output_time = datetime.now()
-            detected_prompt = None
-            recent_output = ""
-
-            async def read_stream_with_timeout(stream, chunks: List[str], stream_name: str):
-                """Read from a stream with timeout detection."""
-                nonlocal last_output_time, detected_prompt, recent_output
-                timeout_warnings = 0
-
-                while True:
-                    try:
-                        chunk = await asyncio.wait_for(
-                            stream.read(4096),
-                            timeout=read_timeout
-                        )
-
-                        if not chunk:
-                            break
-
-                        text = chunk.decode('utf-8', errors='replace')
-                        chunks.append(text)
-                        last_output_time = datetime.now()
-                        timeout_warnings = 0
-
-                        if stream_name == "stdout":
-                            safe_print(text, end='', flush=True)
-
-                            recent_output += text
-                            if len(recent_output) > 1000:
-                                recent_output = recent_output[-1000:]
-
-                            prompt_match = detect_input_prompt(recent_output)
-                            if prompt_match and not detected_prompt:
-                                detected_prompt = prompt_match
-                                safe_print(f"\n\n[CLI WARNING] Detected input prompt: '{prompt_match}'")
-                                print(f"[CLI WARNING] CLI may be waiting for user input!")
-
-                    except asyncio.TimeoutError:
-                        elapsed = (datetime.now() - last_output_time).total_seconds()
-                        timeout_warnings += 1
-
-                        if process.returncode is not None:
-                            break
-
-                        if timeout_warnings % 2 == 1:
-                            print(f"\n[CLI INFO] No output for {elapsed:.0f}s (CLI buffers output, this is normal)")
-
-                        if detected_prompt:
-                            safe_print(f"[CLI ERROR] Process stuck on input prompt: '{detected_prompt}'")
-                            return "stuck_on_prompt"
-
-                return "ok"
-
-            # Read stdout and stderr concurrently
-            stdout_task = asyncio.create_task(
-                read_stream_with_timeout(process.stdout, stdout_chunks, "stdout")
-            )
-            stderr_task = asyncio.create_task(
-                read_stream_with_timeout(process.stderr, stderr_chunks, "stderr")
-            )
-
-            stdout_status, stderr_status = await asyncio.gather(stdout_task, stderr_task)
-
-            # Clean up temp file
-            try:
-                prompt_file.unlink()
-            except:
-                pass
-
-            # Check if we got stuck on a permission prompt
-            if stdout_status == "stuck_on_prompt":
-                print(f"\n[CLI] Terminating process stuck on permission prompt...")
-                try:
-                    process.terminate()
-                    await asyncio.wait_for(process.wait(), timeout=5)
-                except asyncio.TimeoutError:
-                    print(f"[CLI] Force killing process...")
-                    process.kill()
-                    await process.wait()
-
-                result.error_message = f"CLI stuck waiting for input: '{detected_prompt}'"
-                result.error_category = ErrorCategory.TRANSIENT
-                result.success = False
-                result.raw_output = "".join(stdout_chunks)
-                result.raw_error = "".join(stderr_chunks)
-                return result
-
-            await process.wait()
-
-            stdout_text = "".join(stdout_chunks)
-            stderr_text = "".join(stderr_chunks)
-
-            result.raw_output = stdout_text
-            result.raw_error = stderr_text
-
-            print(f"\n\n[CLI DEBUG] Return code: {process.returncode}")
-            print(f"[CLI DEBUG] Stdout length: {len(stdout_text)} chars")
-            print(f"[CLI DEBUG] Stderr length: {len(stderr_text)} chars")
-            if stderr_text:
-                safe_print(f"[CLI DEBUG] Stderr: {stderr_text[:500]}")
-            if not stdout_text and not stderr_text:
-                print(f"[CLI DEBUG] No output received from CLI!")
-
-            if process.returncode != 0:
-                error_text = stderr_text or stdout_text
-                result.error_category = classify_error(error_text)
-                result.error_message = f"CLI exited with code {process.returncode}: {error_text.strip()[:500]}"
-
-                if result.error_category == ErrorCategory.BILLING:
-                    safe_print(f"\n[ERROR] API credits issue: {error_text}")
-                elif result.error_category == ErrorCategory.RATE_LIMIT:
-                    safe_print(f"\n[ERROR] Rate limited: {error_text}")
-                elif result.error_category == ErrorCategory.AUTH:
-                    safe_print(f"\n[ERROR] Authentication issue: {error_text}")
-                else:
-                    print(f"\n[ERROR] CLI failed (code {process.returncode}) - {result.error_category.value}")
-
-                result.success = False
-            else:
-                result.success = True
-                result.summary = "Session completed successfully via CLI"
-                print(f"\n[CLI] Session completed successfully")
-
-                parsed_stats = CostTracker.parse_cli_output(stdout_text)
-                if parsed_stats:
-                    if parsed_stats.input_tokens or parsed_stats.output_tokens:
-                        parsed_stats.cost_usd = self._cost_tracker.calculate_cost(
-                            input_tokens=parsed_stats.input_tokens,
-                            output_tokens=parsed_stats.output_tokens,
-                            cache_read_tokens=parsed_stats.cache_read_tokens,
-                            cache_write_tokens=parsed_stats.cache_write_tokens
-                        )
-                        parsed_stats.model = self.config.model
-                    result.usage_stats = parsed_stats
-                    print(f"[CLI] Usage: {parsed_stats.input_tokens} in / {parsed_stats.output_tokens} out (${parsed_stats.cost_usd:.4f})")
-
-        except FileNotFoundError:
-            result.error_message = "Claude CLI not found. Make sure 'claude' is installed and in PATH."
-            print(f"\n[ERROR] {result.error_message}")
-        except Exception as e:
-            result.error_message = f"CLI session error: {str(e)}"
-            print(f"\n[ERROR] {result.error_message}")
-            import traceback
-            traceback.print_exc()
-
-        return result
-
-
-# =============================================================================
 # SDK Session Implementation
 # =============================================================================
 
 class SDKSession(BaseSession):
     """Session implementation using Claude Agent SDK.
 
-    Note: Uses API credits, not Claude subscription.
-    Known to have reliability issues on Windows.
-
-    Features:
-    - Real-time streaming of agent messages
-    - Token usage tracking
-    - Context usage monitoring for handoff triggers
+    Uses API credits for billing. Provides real-time streaming of agent messages,
+    token usage tracking, and context usage monitoring for handoff triggers.
     """
 
     async def _run_session(
@@ -874,20 +580,17 @@ def create_session(
     project_path: Path,
     session_id: Optional[str] = None
 ) -> BaseSession:
-    """Factory function to create the appropriate session type.
+    """Factory function to create an SDK session.
 
     Args:
-        config: Harness configuration with session_mode setting
+        config: Harness configuration
         project_path: Path to the project directory
         session_id: Optional session identifier
 
     Returns:
-        Appropriate session instance (CLISession or SDKSession)
+        SDKSession instance
     """
-    if config.session_mode == SessionMode.CLI:
-        return CLISession(config, project_path, session_id)
-    else:
-        return SDKSession(config, project_path, session_id)
+    return SDKSession(config, project_path, session_id)
 
 
 # =============================================================================
@@ -929,7 +632,7 @@ class SessionManager:
     def get_recovery_state(self) -> Optional[SessionState]:
         """Get state from a previous interrupted session."""
         # Use a temporary session just to read state
-        temp_session = CLISession(
+        temp_session = SDKSession(
             config=self.config,
             project_path=self.project_path
         )

@@ -23,7 +23,7 @@ from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from autonomous_dev_agent.harness import AutonomousHarness, run_harness
 from autonomous_dev_agent.models import (
     HarnessConfig, Backlog, Feature, FeatureStatus, FeatureCategory,
-    SessionState, ErrorCategory, RetryConfig, SessionMode, SessionOutcome,
+    SessionState, ErrorCategory, RetryConfig, SessionOutcome,
     VerificationConfig
 )
 from autonomous_dev_agent.session import SessionResult
@@ -460,7 +460,7 @@ class TestHealthChecks:
     @pytest.mark.asyncio
     async def test_health_checks_pass(self, harness):
         """Should pass when all conditions met."""
-        with patch('shutil.which', return_value="/usr/bin/claude"):
+        with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
             with patch.object(harness.git, 'is_git_repo', return_value=True):
                 with patch.object(harness.git, 'get_status') as mock_status:
                     mock_status.return_value = Mock(has_changes=False)
@@ -472,27 +472,28 @@ class TestHealthChecks:
     @pytest.mark.asyncio
     async def test_health_checks_fail_no_git(self, harness):
         """Should fail when not a git repo."""
-        with patch.object(harness.git, 'is_git_repo', return_value=False):
-            errors, warnings = await harness._run_health_checks()
+        with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
+            with patch.object(harness.git, 'is_git_repo', return_value=False):
+                errors, warnings = await harness._run_health_checks()
 
-            assert any("git" in e.lower() for e in errors)
+                assert any("git" in e.lower() for e in errors)
 
     @pytest.mark.asyncio
-    async def test_health_checks_fail_no_claude(self, harness):
-        """Should fail when claude CLI not found."""
-        with patch('autonomous_dev_agent.harness.find_claude_executable', return_value=None):
+    async def test_health_checks_fail_no_api_key(self, harness):
+        """Should fail when ANTHROPIC_API_KEY not set."""
+        with patch.dict('os.environ', {}, clear=True):
             with patch.object(harness.git, 'is_git_repo', return_value=True):
                 with patch.object(harness.git, 'get_status') as mock_status:
                     mock_status.return_value = Mock(has_changes=False)
 
                     errors, warnings = await harness._run_health_checks()
 
-                    assert any("claude" in e.lower() for e in errors)
+                    assert any("anthropic_api_key" in e.lower() for e in errors)
 
     @pytest.mark.asyncio
     async def test_health_checks_warn_uncommitted(self, harness):
         """Should warn about uncommitted changes."""
-        with patch('autonomous_dev_agent.harness.find_claude_executable', return_value="/usr/bin/claude"):
+        with patch.dict('os.environ', {'ANTHROPIC_API_KEY': 'test-key'}):
             with patch.object(harness.git, 'is_git_repo', return_value=True):
                 with patch.object(harness.git, 'get_status') as mock_status:
                     mock_status.return_value = Mock(
