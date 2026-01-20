@@ -861,7 +861,7 @@
       "name": "Session Logger & Workspace Foundation",
       "description": "Create .ada/ workspace structure with JSONL session logging. Log all agent interactions: prompts, assistant messages, tool calls with full inputs/outputs, errors, context updates. Verbose by default - capture everything for debugging and improvement.",
       "category": "infrastructure",
-      "status": "pending",
+      "status": "completed",
       "priority": 95,
       "acceptance_criteria": [
         "Create .ada/logs/sessions/ directory structure",
@@ -873,13 +873,17 @@
         "Wire logging into CLISession and SDKSession"
       ],
       "depends_on": [],
-      "started_at": null,
-      "completed_at": null,
-      "sessions_spent": 0,
+      "started_at": "2026-01-20T12:00:00",
+      "completed_at": "2026-01-20T13:00:00",
+      "sessions_spent": 1,
       "implementation_notes": [
         "Observability Workspace Phase 1",
         "Spec in docs/OBSERVABILITY_SPEC.md",
-        "JSONL format enables streaming and easy parsing"
+        "JSONL format enables streaming and easy parsing",
+        "Added AssistantMessageEvent and ToolResultEvent models",
+        "SDKSession emits structured events via callback",
+        "CLI mode logs raw output via log_raw_output()",
+        "Truncation configurable (default 50KB)"
       ],
       "quality_gates": {
         "require_tests": true,
@@ -899,7 +903,7 @@
       "name": "Project Context Preservation",
       "description": "Enhance ada init to capture project description. Store in .ada/project.json with name, description, created_at, and init_session details. This preserves the initial context that was previously lost.",
       "category": "functional",
-      "status": "pending",
+      "status": "completed",
       "priority": 90,
       "acceptance_criteria": [
         "ada init --description flag added",
@@ -910,9 +914,9 @@
         "project.json committed to git (not in .gitignore)"
       ],
       "depends_on": ["OW1-session-logger"],
-      "started_at": null,
-      "completed_at": null,
-      "sessions_spent": 0,
+      "started_at": "2026-01-20T13:00:00",
+      "completed_at": "2026-01-20T13:22:00",
+      "sessions_spent": 1,
       "implementation_notes": [
         "Observability Workspace Phase 1",
         "Fixes the 'lost initial instructions' problem"
@@ -932,7 +936,7 @@
       "name": "CLI Log Commands",
       "description": "Add ada logs command for viewing session logs. Support: list sessions, view specific session, filter by feature/outcome/date, real-time tail of current session, export to file.",
       "category": "functional",
-      "status": "pending",
+      "status": "completed",
       "priority": 85,
       "acceptance_criteria": [
         "ada logs - list recent sessions with summary table",
@@ -945,11 +949,14 @@
         "Pretty formatting for human readability"
       ],
       "depends_on": ["OW1-session-logger"],
-      "started_at": null,
-      "completed_at": null,
-      "sessions_spent": 0,
+      "started_at": "2026-01-20T00:00:00",
+      "completed_at": "2026-01-20T14:00:00",
+      "sessions_spent": 1,
       "implementation_notes": [
-        "Observability Workspace Phase 2"
+        "Observability Workspace Phase 2",
+        "Implemented in cli.py lines 1247-1394",
+        "Formatting utilities in log_formatter.py",
+        "All acceptance criteria verified complete"
       ],
       "quality_gates": {
         "require_tests": true,
@@ -993,8 +1000,44 @@
         "custom_validators": []
       },
       "model_override": null
+    },
+    {
+      "id": "CLI-removal",
+      "name": "Remove CLI Mode - SDK Only",
+      "description": "Remove all CLI-specific code and make SDK the only session mode. Simplifies codebase (~487 lines), improves observability (turn-level logging only works in SDK), and standardizes on API credits billing.",
+      "category": "refactor",
+      "status": "pending",
+      "priority": 92,
+      "acceptance_criteria": [
+        "SessionMode enum removed from models.py",
+        "CLISession class removed from session.py",
+        "cli_utils.py file deleted",
+        "--mode option removed from ada run command",
+        "CLI-specific logging removed from orchestrator",
+        "CLI-specific tests removed",
+        "All remaining tests pass",
+        "Documentation updated"
+      ],
+      "depends_on": [],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "Handoff file: HANDOFF-CLI-REMOVAL.md",
+        "User runs on WSL, avoiding Windows SDK issues",
+        "~487 lines of code to remove"
+      ],
+      "quality_gates": {
+        "require_tests": false,
+        "max_file_lines": null,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
     }
   ],
   "created_at": "2026-01-18T13:00:00",
-  "last_updated": "2026-01-18T13:00:00"
+  "last_updated": "2026-01-20T13:30:00"
 }
