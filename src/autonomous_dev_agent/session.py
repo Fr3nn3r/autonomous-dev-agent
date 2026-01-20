@@ -335,6 +335,7 @@ class SDKSession(BaseSession):
         stop_check: Optional[Callable[[], bool]] = None
     ) -> SessionResult:
         """Run session using Claude Agent SDK."""
+        global _graceful_shutdown_in_progress
         print("[SDK] Entering _run_session...", flush=True)
 
         # Set up custom exception handler to suppress SDK cleanup errors during shutdown
@@ -505,7 +506,6 @@ class SDKSession(BaseSession):
 
                 # Check for stop request (mid-session interruption)
                 if stop_check and stop_check():
-                    global _graceful_shutdown_in_progress
                     _graceful_shutdown_in_progress = True
                     print(f"\n[SDK] Stop requested - interrupting session gracefully")
                     result.interrupted = True
@@ -622,7 +622,6 @@ class SDKSession(BaseSession):
             traceback.print_exc()
         finally:
             # Restore the original exception handler
-            global _graceful_shutdown_in_progress
             _graceful_shutdown_in_progress = False
             if original_handler:
                 loop.set_exception_handler(original_handler)

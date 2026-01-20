@@ -122,11 +122,72 @@ npx playwright test --update-snapshots
 - [ ] Create a basic Playwright test for the new UI
 - [ ] Capture baseline screenshots for visual regression
 
-### 6. Testing Requirements
-- Run the test suite after each significant change
-- Fix any test failures before moving on
-- Do NOT delete or modify existing tests to make them pass
-- Add new tests for new functionality
+### 6. Testing Requirements (MANDATORY)
+
+**Tests are NOT optional.** The feature completion system will block incomplete features without proper tests.
+
+#### When Unit Tests Are REQUIRED
+
+Write unit tests (Vitest/pytest) for:
+- Service/utility functions with business logic
+- Data transformations and validators
+- State management logic (stores, reducers, hooks)
+- API response handlers and data fetching functions
+- Any function with conditional logic or edge cases
+
+Unit tests are NOT required for:
+- Simple pass-through components with no logic
+- Pure styling changes (CSS, Tailwind classes)
+- Configuration files (tsconfig, vite.config, etc.)
+- Type definitions only
+
+#### When E2E Tests Are REQUIRED
+
+Write E2E tests (Playwright) for:
+- New user-facing features (forms, buttons, interactive flows)
+- Critical user paths (login, checkout, data submission)
+- Features with complex interactions or multi-step flows
+- Any feature where visual verification matters
+
+E2E tests are NOT required for:
+- Backend-only changes (APIs without UI)
+- Infrastructure changes (configs, build setup)
+- Refactors that don't change user-visible behavior
+- CLI tools (unit tests are sufficient)
+
+#### Test-Commit Workflow (MANDATORY)
+
+**Before ANY commit:**
+
+```bash
+# For JavaScript/TypeScript projects:
+npm run build         # Build must succeed
+npm run test          # Unit tests must pass
+
+# For UI features, also run:
+npm run test:e2e      # E2E tests must pass
+
+# For Python projects:
+python -m py_compile your_file.py  # Syntax check
+pytest                              # Tests must pass
+```
+
+**If tests fail:**
+1. Fix the failing tests FIRST
+2. Do NOT commit with failing tests
+3. Do NOT delete tests to make them pass
+4. Do NOT skip tests with `.skip` or `@pytest.mark.skip`
+
+**If no tests exist for your feature:**
+1. Create at least one test covering the happy path
+2. Add edge case tests for error conditions
+3. For UI features, create a basic E2E test
+
+#### Test File Naming Conventions
+
+- **Unit tests:** `*.test.ts`, `*.spec.ts`, `test_*.py`, `*_test.py`
+- **E2E tests:** `*.spec.ts` in `tests/e2e/` or `e2e/` directory
+- **Test files should mirror source structure:** `src/utils/format.ts` → `src/utils/format.test.ts`
 
 ### 7. Commit Guidelines
 Use clear, descriptive commit messages:

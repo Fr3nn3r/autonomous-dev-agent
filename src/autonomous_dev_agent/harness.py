@@ -17,7 +17,7 @@ import json
 import shutil
 import sys
 from pathlib import Path
-from typing import Optional, List, Tuple
+from typing import Optional, List, Tuple, TypedDict
 
 from rich.console import Console
 from rich.panel import Panel
@@ -47,6 +47,110 @@ from .orchestration import (
 
 # Import protocols for type hints
 from .protocols import GitOperations, ProgressLog
+
+
+class ProjectTypeInfo(TypedDict):
+    """Result of project type detection."""
+    framework: Optional[str]  # 'node', 'python', or None
+    has_ui: bool
+    test_command: Optional[str]
+
+
+def detect_project_type(project_path: Path) -> ProjectTypeInfo:
+    """Detect project type and appropriate testing configuration.
+
+    Analyzes the project structure to determine:
+    - Framework (Node.js, Python, or unknown)
+    - Whether the project has a user-facing UI
+    - Appropriate test command based on detection
+
+    Args:
+        project_path: Path to the project directory
+
+    Returns:
+        ProjectTypeInfo with framework, has_ui, and test_command
+    """
+    has_ui = False
+    framework: Optional[str] = None
+
+    # Check for Node.js project
+    pkg_json = project_path / "package.json"
+    if pkg_json.exists():
+        try:
+            pkg = json.loads(pkg_json.read_text())
+            deps = {**pkg.get("dependencies", {}), **pkg.get("devDependencies", {})}
+
+            # Check for UI frameworks
+            ui_frameworks = ["react", "vue", "svelte", "angular", "next", "nuxt", "@sveltejs/kit"]
+            has_ui = any(d in deps for d in ui_frameworks)
+
+            framework = "node"
+
+            # Determine test command based on scripts and UI detection
+            scripts = pkg.get("scripts", {})
+            if has_ui:
+                # Check if E2E and unit tests are configured
+                has_e2e = "test:e2e" in scripts or "playwright" in deps
+                has_unit = "test" in scripts or "vitest" in deps or "jest" in deps
+                if has_e2e and has_unit:
+                    test_command = "npm run test && npm run test:e2e"
+                elif has_unit:
+                    test_command = "npm run test"
+                else:
+                    test_command = "npm test"  # Default
+            else:
+                # Non-UI Node.js project
+                test_command = "npm run test" if "test" in scripts else "npm test"
+
+            return ProjectTypeInfo(
+                framework=framework,
+                has_ui=has_ui,
+                test_command=test_command
+            )
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    # Check for Python project
+    pyproject = project_path / "pyproject.toml"
+    setup_py = project_path / "setup.py"
+    requirements = project_path / "requirements.txt"
+
+    if pyproject.exists() or setup_py.exists() or requirements.exists():
+        framework = "python"
+
+        # Check for UI indicators in Python projects
+        templates_dir = project_path / "templates"
+        static_dir = project_path / "static"
+        has_ui = templates_dir.exists() or static_dir.exists()
+
+        # Check for Flask/Django/FastAPI in dependencies
+        try:
+            if pyproject.exists():
+                content = pyproject.read_text()
+                web_frameworks = ["flask", "django", "fastapi", "streamlit", "gradio"]
+                if any(fw in content.lower() for fw in web_frameworks):
+                    has_ui = True
+        except IOError:
+            pass
+
+        # Determine test command
+        if has_ui:
+            test_command = "pytest && playwright test"
+        else:
+            test_command = "pytest"
+
+        return ProjectTypeInfo(
+            framework=framework,
+            has_ui=has_ui,
+            test_command=test_command
+        )
+
+    # Unknown project type
+    return ProjectTypeInfo(
+        framework=None,
+        has_ui=False,
+        test_command=None
+    )
 
 
 # Windows-compatible symbols (cp1252 doesn't support Unicode checkmarks)
@@ -99,6 +203,9 @@ class AutonomousHarness:
         """
         self.project_path = Path(project_path).resolve()
         self.config = config or HarnessConfig()
+
+        # Auto-detect project type and test command if not configured
+        self._auto_configure_testing()
 
         # Core components - use injected or create defaults
         self.git = git or GitManager(self.project_path)
@@ -163,6 +270,37 @@ class AutonomousHarness:
 
         # Checkpoint state for periodic build verification
         self._checkpoint_state = CheckpointState()
+
+    def _auto_configure_testing(self) -> None:
+        """Auto-detect project type and configure testing if not already set.
+
+        Sets test_command, has_ui, and project_framework based on project analysis.
+        Does not override explicitly set values.
+        """
+        # Skip if test_command is already configured
+        if self.config.test_command is not None:
+            return
+
+        # Detect project type
+        project_info = detect_project_type(self.project_path)
+
+        # Set config values if not already set
+        if self.config.has_ui is None:
+            self.config.has_ui = project_info["has_ui"]
+
+        if self.config.project_framework is None:
+            self.config.project_framework = project_info["framework"]
+
+        if self.config.test_command is None and project_info["test_command"]:
+            self.config.test_command = project_info["test_command"]
+
+        # Log detection results
+        if project_info["framework"]:
+            ui_status = "with UI" if project_info["has_ui"] else "no UI"
+            console.print(
+                f"[dim]Auto-detected: {project_info['framework']} project ({ui_status}), "
+                f"test command: {project_info['test_command']}[/dim]"
+            )
 
     async def _run_health_checks(self) -> Tuple[List[str], List[str]]:
         """Run pre-flight health checks.

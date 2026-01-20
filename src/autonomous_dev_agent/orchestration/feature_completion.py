@@ -15,7 +15,7 @@ from typing import Optional, TYPE_CHECKING, Callable
 from rich.console import Console
 
 from ..models import (
-    HarnessConfig, Feature, Backlog, ProgressEntry,
+    HarnessConfig, Feature, Backlog, ProgressEntry, FeatureStatus,
     SessionOutcome, QualityGates, ErrorCategory
 )
 from ..protocols import GitOperations, ProgressLog
@@ -41,6 +41,22 @@ else:
     SYM_FAIL = "✗"
 
 console = Console()
+
+# Grace period: number of features that can complete before test enforcement
+TESTING_GRACE_PERIOD = 3
+
+# Test file patterns for detecting if tests exist
+TEST_FILE_PATTERNS = [
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/*.test.js",
+    "**/*.spec.js",
+    "**/test_*.py",
+    "**/*_test.py",
+    "**/tests/**/*.py",
+]
 
 
 class FeatureCompletionHandler:
@@ -96,6 +112,38 @@ class FeatureCompletionHandler:
             saver: Callable that saves the backlog
         """
         self._save_backlog = saver
+
+    def _project_has_tests(self) -> bool:
+        """Check if the project has any test files.
+
+        Returns:
+            True if test files exist, False otherwise
+        """
+        for pattern in TEST_FILE_PATTERNS:
+            # Use glob to find test files, excluding node_modules and __pycache__
+            matches = list(self.project_path.glob(pattern))
+            # Filter out node_modules and other common excluded dirs
+            matches = [
+                m for m in matches
+                if "node_modules" not in str(m)
+                and "__pycache__" not in str(m)
+                and ".venv" not in str(m)
+            ]
+            if matches:
+                return True
+        return False
+
+    def _add_progress_note(self, note: str) -> None:
+        """Add a note to the progress file for visibility.
+
+        Args:
+            note: Note to add
+        """
+        self.progress.append_entry(ProgressEntry(
+            session_id="system",
+            action="note",
+            summary=note
+        ))
 
     async def run_tests(self) -> tuple[bool, str]:
         """Run the configured test command.
@@ -234,6 +282,31 @@ class FeatureCompletionHandler:
             self._save_backlog()
 
             return False
+
+        # Grace period enforcement: check if project has tests
+        completed_count = sum(
+            1 for f in backlog.features if f.status == FeatureStatus.COMPLETED
+        )
+        has_tests = self._project_has_tests()
+
+        if completed_count >= TESTING_GRACE_PERIOD and not has_tests:
+            # After grace period, warn strongly but allow to not block progress
+            warning_msg = (
+                f"⚠️  WARNING: {completed_count} features completed but no tests exist. "
+                "Tests should be added before more features."
+            )
+            console.print(f"[yellow]{warning_msg}[/yellow]")
+
+            # Add note to progress file for visibility
+            self._add_progress_note(
+                f"⚠️ No tests exist after {completed_count} features - testing infrastructure needed"
+            )
+
+            # Add note to feature for future sessions
+            backlog.add_implementation_note(
+                feature.id,
+                f"⚠️ Completed without project tests - add testing infrastructure"
+            )
 
         # Get commit info
         git_status = self.git.get_status()

@@ -294,6 +294,16 @@ class HarnessConfig(BaseModel):
         description="Command to run tests before marking feature complete (e.g., 'pytest', 'npm test')"
     )
 
+    # Project type detection (auto-detected if not set)
+    has_ui: Optional[bool] = Field(
+        default=None,
+        description="Whether project has user-facing UI (auto-detected from dependencies if None)"
+    )
+    project_framework: Optional[str] = Field(
+        default=None,
+        description="Detected project framework: 'node', 'python', or None (auto-detected if None)"
+    )
+
     # Retry configuration
     retry: RetryConfig = Field(
         default_factory=RetryConfig,
