@@ -982,3 +982,78 @@ class Alert(BaseModel):
     dismissed: bool = Field(default=False, description="Whether the alert has been dismissed")
     feature_id: Optional[str] = Field(default=None, description="Related feature ID")
     session_id: Optional[str] = Field(default=None, description="Related session ID")
+
+
+# =============================================================================
+# Workspace Health Models
+# =============================================================================
+
+
+class HealthIssueType(str, Enum):
+    """Types of workspace health issues."""
+    CRASHED_SESSION = "crashed_session"      # Log has session_start but no session_end
+    STALE_CURRENT = "stale_current"          # current.jsonl points to ended/missing session
+    ORPHAN_LOG = "orphan_log"                # Log file not in index.json
+    SESSION_COLLISION = "session_collision"  # Two sessions with same date_seq prefix
+    UNCOMMITTED_WORK = "uncommitted_work"    # Git status shows changes
+    STALE_FEATURE = "stale_feature"          # Feature in_progress but no active session
+    CORRUPT_INDEX = "corrupt_index"          # index.json parse error
+    MISSING_LOG = "missing_log"              # Index references non-existent file
+
+
+class HealthIssueSeverity(str, Enum):
+    """Severity levels for workspace health issues."""
+    CRITICAL = "critical"
+    WARNING = "warning"
+    INFO = "info"
+
+
+class HealthIssue(BaseModel):
+    """A single workspace health issue."""
+    type: HealthIssueType = Field(..., description="Type of health issue")
+    severity: HealthIssueSeverity = Field(..., description="Issue severity")
+    message: str = Field(..., description="Human-readable description")
+    details: Optional[str] = Field(default=None, description="Additional details")
+    session_id: Optional[str] = Field(default=None, description="Related session ID")
+    file_path: Optional[str] = Field(default=None, description="Related file path")
+    feature_id: Optional[str] = Field(default=None, description="Related feature ID")
+    auto_fixable: bool = Field(default=False, description="Whether this issue can be auto-fixed")
+    fix_description: Optional[str] = Field(default=None, description="Description of the fix")
+
+
+class HealthReport(BaseModel):
+    """Complete health report for a workspace."""
+    project_path: str = Field(..., description="Path to the project")
+    checked_at: datetime = Field(default_factory=datetime.now, description="When the check was run")
+    healthy: bool = Field(default=True, description="Whether the workspace is healthy")
+    issues: list[HealthIssue] = Field(default_factory=list, description="All issues found")
+    issues_fixed: list[HealthIssue] = Field(default_factory=list, description="Issues that were fixed")
+    critical_count: int = Field(default=0, description="Number of critical issues")
+    warning_count: int = Field(default=0, description="Number of warning issues")
+    info_count: int = Field(default=0, description="Number of info issues")
+
+    def add_issue(self, issue: HealthIssue) -> None:
+        """Add an issue to the report and update counts."""
+        self.issues.append(issue)
+        self.healthy = False
+        if issue.severity == HealthIssueSeverity.CRITICAL:
+            self.critical_count += 1
+        elif issue.severity == HealthIssueSeverity.WARNING:
+            self.warning_count += 1
+        else:
+            self.info_count += 1
+
+    def mark_fixed(self, issue: HealthIssue) -> None:
+        """Mark an issue as fixed."""
+        if issue in self.issues:
+            self.issues.remove(issue)
+            self.issues_fixed.append(issue)
+            # Recalculate counts
+            if issue.severity == HealthIssueSeverity.CRITICAL:
+                self.critical_count -= 1
+            elif issue.severity == HealthIssueSeverity.WARNING:
+                self.warning_count -= 1
+            else:
+                self.info_count -= 1
+            # Update healthy status
+            self.healthy = len(self.issues) == 0

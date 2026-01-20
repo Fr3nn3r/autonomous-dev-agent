@@ -24,7 +24,8 @@ from rich.panel import Panel
 
 from .models import (
     Backlog, Feature, FeatureStatus, HarnessConfig,
-    ProgressEntry, ErrorCategory, CheckpointState, VerificationConfig
+    ProgressEntry, ErrorCategory, CheckpointState, VerificationConfig,
+    HealthIssueSeverity,
 )
 from .progress import ProgressTracker
 from .git_manager import GitManager
@@ -35,6 +36,7 @@ from .model_selector import ModelSelector
 from .alert_manager import AlertManager
 from .workspace import WorkspaceManager
 from .verification import FeatureVerifier
+from .workspace_health import WorkspaceHealthChecker, WorkspaceCleaner
 
 # Import orchestration components
 from .orchestration import (
@@ -186,15 +188,13 @@ class AutonomousHarness:
                     f"{len(git_status.untracked_files)} untracked"
                 )
 
-        # 2. Check ANTHROPIC_API_KEY is set (required for SDK mode)
+        # 2. Check ANTHROPIC_API_KEY (optional - SDK can use Claude Code subscription auth)
         import os
         if os.environ.get("ANTHROPIC_API_KEY"):
             console.print(f"  [green]{SYM_OK}[/green] ANTHROPIC_API_KEY is set")
         else:
-            errors.append(
-                "ANTHROPIC_API_KEY environment variable not set.\n"
-                "           Set it with: export ANTHROPIC_API_KEY=your-key-here"
-            )
+            # Not an error - SDK can authenticate via Claude Code subscription
+            console.print(f"  [yellow]{SYM_WARN}[/yellow] ANTHROPIC_API_KEY not set (using subscription auth)")
 
         # 3. Check backlog file exists and is valid
         backlog_path = self.project_path / self.config.backlog_file
@@ -254,6 +254,53 @@ class AutonomousHarness:
 
         return errors, warnings
 
+    async def _run_workspace_health_check(self) -> bool:
+        """Run workspace health checks and auto-fix safe issues.
+
+        Returns:
+            True if workspace is healthy (or was repaired), False if critical issues remain
+        """
+        console.print("\n[blue]Running workspace health check...[/blue]")
+
+        checker = WorkspaceHealthChecker(
+            self.project_path,
+            workspace=self.workspace,
+            git=self.git,
+            backlog_file=self.config.backlog_file
+        )
+        report = checker.check_all()
+
+        if report.healthy:
+            console.print(f"  [green]{SYM_OK}[/green] Workspace is healthy")
+            return True
+
+        # Show found issues
+        for issue in report.issues:
+            if issue.severity == HealthIssueSeverity.CRITICAL:
+                console.print(f"  [red]{SYM_FAIL}[/red] {issue.message}")
+            elif issue.severity == HealthIssueSeverity.WARNING:
+                console.print(f"  [yellow]{SYM_WARN}[/yellow] {issue.message}")
+            else:
+                console.print(f"  [dim][-][/dim] {issue.message}")
+
+        # Auto-fix safe issues
+        cleaner = WorkspaceCleaner(self.project_path, workspace=self.workspace)
+        fixed = cleaner.fix_auto(report)
+
+        if fixed:
+            console.print(f"  [green]{SYM_OK}[/green] Auto-fixed {len(fixed)} issue(s)")
+
+        # Block on critical issues
+        if report.critical_count > 0:
+            console.print(f"\n[red]{SYM_FAIL} Critical workspace issues detected.[/red]")
+            console.print("[red]Run 'ada health --fix-all' to attempt repair.[/red]")
+            return False
+
+        if report.warning_count > 0:
+            console.print(f"  [yellow]{SYM_WARN}[/yellow] {report.warning_count} warning(s) remain (proceeding anyway)")
+
+        return True
+
     def load_backlog(self) -> Backlog:
         """Load the feature backlog from JSON file."""
         backlog_path = self.project_path / self.config.backlog_file
@@ -311,6 +358,11 @@ class AutonomousHarness:
 
         # Check for recovery from interrupted session
         recovery_feature_id = await self._recovery_manager.check_for_recovery()
+
+        # Run workspace health check
+        if self.workspace.exists():
+            if not await self._run_workspace_health_check():
+                return
 
         # Check if initialization needed
         progress_exists = (self.project_path / self.config.progress_file).exists()
