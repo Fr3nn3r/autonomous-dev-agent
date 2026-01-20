@@ -70,6 +70,7 @@ pytest -k "backlog" --tb=short      # By keyword
 - Pydantic models for all data structures
 - Test new/changed logic with PyTest
 - Do not start/stop dev servers automatically - ask user first
+- **No Unicode symbols**: Avoid emojis and special Unicode characters (e.g., checkmarks, X marks) in prompts and code - they cause encoding issues on Windows. Use text alternatives like `[CORRECT]`, `[FORBIDDEN]`, `[OK]`, `[FAIL]` instead.
 
 ## Versioning & Commits
 

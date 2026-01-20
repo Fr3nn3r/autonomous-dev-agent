@@ -229,7 +229,165 @@ Use clear, descriptive commit messages:
 - `test: add integration tests for checkout flow`
 - `refactor: extract validation logic to separate module`
 
-### 8. Progress Updates
+### 8. Feature Completion Verification (BLOCKING)
+
+**STOP. Before marking ANY feature as "completed", you MUST complete this verification.**
+
+This is not optional. If you skip this, the feature is NOT complete.
+
+#### Step 1: Determine if E2E tests are required
+
+Answer this question: **Does this feature have user-facing UI?**
+
+UI features include:
+- Components users interact with (forms, buttons, modals, lists)
+- Pages or views users navigate to
+- Visual changes users can see
+- Interactive flows (create, edit, delete, filter, search)
+
+Infrastructure features that do NOT require E2E tests:
+- Build configuration, tooling setup
+- Type definitions only
+- Backend-only APIs (no UI)
+- Pure refactors with no behavior change
+
+#### Step 2: Build AND Dev Server MUST work (PREREQUISITE)
+
+**Before running ANY tests, BOTH must succeed:**
+
+```bash
+# 1. Production build must pass
+npm run build
+
+# 2. Dev server must start without errors
+npm run dev &
+sleep 5
+# Check for errors in the terminal output
+# Kill with: kill %1
+```
+
+**If either fails, STOP. Fix the errors first.**
+
+- The production build (`npm run build`) and dev server (`npm run dev`) use different compilation pipelines
+- A passing build does NOT guarantee the dev server works
+- E2E tests run against the dev server, so dev server MUST work
+- Do NOT proceed to run E2E tests with a broken dev server
+- Do NOT write E2E tests that "skip" when the app doesn't compile
+- A passing E2E test suite with skipped tests is NOT passing
+
+**Common build issues to fix:**
+- Duplicate declarations (remove redundant exports/imports)
+- Type errors (fix the types, don't cast to `any`)
+- Missing imports (add them)
+- Unused variables (remove them or use them)
+
+#### Step 3: If E2E tests ARE required, verify they exist
+
+Run this check:
+```bash
+# Check if E2E test directory exists
+ls tests/e2e/ 2>/dev/null || ls e2e/ 2>/dev/null || echo "NO E2E DIRECTORY"
+
+# Check for test files related to this feature
+find . -path ./node_modules -prune -o -name "*.spec.ts" -print 2>/dev/null | grep -i "{feature_id}" || echo "NO E2E TESTS FOR THIS FEATURE"
+```
+
+**If "NO E2E DIRECTORY" or "NO E2E TESTS FOR THIS FEATURE":**
+1. You MUST create E2E tests before marking complete
+2. Set up Playwright if not already configured (see Section 5)
+3. Write at least one E2E test covering the happy path
+4. Run the test and confirm it passes
+
+#### Step 4: E2E Test Quality Requirements (CRITICAL)
+
+**Your E2E tests must actually test functionality. The following patterns are FORBIDDEN:**
+
+**[FORBIDDEN] DO NOT write tests that skip on app errors:**
+```typescript
+// FORBIDDEN - This makes tests pass without testing anything
+if (await errorOverlay.isVisible()) {{
+  test.skip(true, 'App has errors');
+}}
+```
+
+**[FORBIDDEN] DO NOT write tests that skip when elements aren't found:**
+```typescript
+// FORBIDDEN - This hides real failures
+if (!await button.isVisible()) {{
+  test.skip(true, 'Button not found');
+  return;
+}}
+```
+
+**[FORBIDDEN] DO NOT use excessive try/catch that swallows failures:**
+```typescript
+// FORBIDDEN - This hides real failures
+try {{
+  await expect(element).toBeVisible();
+}} catch {{
+  // silently pass
+}}
+```
+
+**[CORRECT] DO write tests that fail when something is wrong:**
+```typescript
+// CORRECT - This will fail if the button doesn't exist
+await expect(page.locator('button[aria-label="Open menu"]')).toBeVisible();
+await button.click();
+```
+
+**[CORRECT] DO let Playwright's built-in waiting handle timing:**
+```typescript
+// CORRECT - Playwright auto-waits for elements
+await expect(sidebar).toBeVisible();
+await expect(sidebar).toHaveClass(/translate-x-0/);
+```
+
+**The purpose of E2E tests is to CATCH problems, not to HIDE them.**
+
+#### Step 5: Run all tests
+
+```bash
+# Unit tests
+npm run test
+
+# E2E tests (if this is a UI feature)
+npm run test:e2e
+```
+
+**Both must pass. If either fails, fix the code (not the tests) before proceeding.**
+
+#### Step 6: Explicit verification checklist
+
+Before updating feature-list.json to "completed", answer ALL of these:
+
+| Check | Answer |
+|-------|--------|
+| Did `npm run build` succeed? | YES / NO |
+| Did `npm run dev` start without errors? | YES / NO |
+| Is this a UI feature? | YES / NO |
+| If YES: Do E2E tests exist for this feature? | YES / NO / N/A |
+| If YES: Are E2E tests free of skip-on-error patterns? | YES / NO / N/A |
+| If YES: Did `npm run test:e2e` pass with 0 skipped? | YES / NO / N/A |
+| Did `npm run test` (unit tests) pass? | YES / NO |
+
+**If ANY answer is NO (not N/A), the feature is NOT complete. Go fix it.**
+
+**IMPORTANT: Skipped tests are NOT passing tests.** If E2E tests report "X skipped", those tests did not run. Fix the underlying issue (usually a dev server error) and ensure ALL tests actually execute.
+
+#### Step 7: Document test coverage in progress log
+
+When writing your completion notes to claude-progress.txt, include:
+```
+### Test Coverage
+- Unit tests: [list test files added/modified]
+- E2E tests: [list test files added/modified, or "N/A - infrastructure feature"]
+- All tests passing: YES
+```
+
+---
+
+### 9. Progress Updates
 Before ending your session, you MUST:
 1. Update claude-progress.txt with:
    - What you accomplished
@@ -238,7 +396,7 @@ Before ending your session, you MUST:
 2. Make a final commit with all changes
 3. Leave a clear handoff message
 
-### 9. Context Threshold Warning
+### 10. Context Threshold Warning
 If you notice you're approaching the context limit (you'll feel responses getting longer to process), prioritize:
 1. Commit current work
 2. Write detailed handoff notes
