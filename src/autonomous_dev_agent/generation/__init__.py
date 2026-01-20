@@ -6,11 +6,12 @@ This module provides tools to:
 """
 
 from .spec_parser import SpecParser, ParsedSpec
-from .feature_generator import FeatureGenerator, GeneratedBacklog
+from .feature_generator import FeatureGenerator, GeneratedBacklog, GenerationError
 
 __all__ = [
     "SpecParser",
     "ParsedSpec",
     "FeatureGenerator",
     "GeneratedBacklog",
+    "GenerationError",
 ]

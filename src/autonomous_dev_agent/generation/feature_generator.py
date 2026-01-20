@@ -4,14 +4,13 @@ Uses Claude to analyze a specification file and generate a structured
 feature backlog in JSON format.
 """
 
+import asyncio
 import json
 import re
-import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-from ..cli_utils import get_claude_executable
 from ..models import (
     Backlog,
     Feature,
@@ -37,6 +36,14 @@ CATEGORY_MAP: dict[str, FeatureCategory] = {
     "documentation": FeatureCategory.DOCUMENTATION,
     "infrastructure": FeatureCategory.INFRASTRUCTURE,
 }
+
+
+class GenerationError(RuntimeError):
+    """Error during feature generation with optional raw response."""
+
+    def __init__(self, message: str, raw_response: str = ""):
+        super().__init__(message)
+        self.raw_response = raw_response
 
 
 @dataclass
@@ -197,9 +204,10 @@ class FeatureGenerator:
         features = self._parse_response(response)
 
         if not features:
-            raise RuntimeError(
+            raise GenerationError(
                 "Failed to parse features from Claude response. "
-                "Check that Claude returned valid JSON."
+                "Check that Claude returned valid JSON.",
+                raw_response=response,
             )
 
         # Build the backlog
@@ -237,7 +245,9 @@ class FeatureGenerator:
         return self.generate(spec, project_name, project_path)
 
     def _call_claude(self, prompt: str) -> str:
-        """Call Claude CLI with the prompt.
+        """Call Claude using the Claude Agent SDK.
+
+        Uses the same authentication as Claude CLI (subscription or API key).
 
         Args:
             prompt: The prompt to send.
@@ -246,38 +256,46 @@ class FeatureGenerator:
             Claude's response text.
 
         Raises:
-            RuntimeError: If Claude CLI is not available or times out.
+            RuntimeError: If SDK call fails.
+        """
+        return asyncio.run(self._call_claude_async(prompt))
+
+    async def _call_claude_async(self, prompt: str) -> str:
+        """Async implementation of Claude call using Agent SDK.
+
+        Args:
+            prompt: The prompt to send.
+
+        Returns:
+            Claude's response text.
         """
         try:
-            # Find Claude executable using robust cross-platform discovery
-            claude_exe = get_claude_executable()
-
-            # Use Claude CLI in print mode (non-interactive)
-            # Pass prompt via stdin to avoid Windows command line length limits
-            result = subprocess.run(
-                [
-                    claude_exe,
-                    "--print",
-                    "--model", self.model,
-                    "--max-turns", "1",
-                    "-p", "-",  # Read prompt from stdin
-                ],
-                input=prompt,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5 minute timeout for generation (Opus can be slow)
+            from claude_agent_sdk import query, ClaudeAgentOptions
+            from claude_agent_sdk import AssistantMessage, TextBlock
+        except ImportError:
+            raise RuntimeError(
+                "claude-agent-sdk not installed. Run: pip install claude-agent-sdk"
             )
 
-            if result.returncode == 0:
-                return result.stdout
-            else:
-                error_msg = result.stderr or "Unknown error"
-                raise RuntimeError(f"Claude CLI failed: {error_msg}")
+        options = ClaudeAgentOptions(
+            model=self.model,
+            allowed_tools=[],  # No tools needed for text generation
+        )
 
-        except subprocess.TimeoutExpired:
-            raise RuntimeError("Claude CLI timed out after 5 minutes")
-        except FileNotFoundError as e:
-            raise RuntimeError(str(e))
+        response_text = ""
+        try:
+            async for message in query(prompt=prompt, options=options):
+                if isinstance(message, AssistantMessage):
+                    for block in message.content:
+                        if isinstance(block, TextBlock):
+                            response_text += block.text
+        except Exception as e:
+            raise RuntimeError(f"Claude Agent SDK error: {e}")
+
+        if not response_text:
+            raise RuntimeError("Claude returned empty response")
+
+        return response_text
 
     def _parse_response(self, response: str) -> list[Feature]:
         """Parse Claude's response into Feature objects.

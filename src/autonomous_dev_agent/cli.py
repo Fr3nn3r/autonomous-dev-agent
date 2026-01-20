@@ -23,7 +23,7 @@ from .discovery import (
 from .discovery.reviewer import CodeReviewer
 from .discovery.requirements import RequirementsExtractor
 from .verification import FeatureVerifier, PreCompleteHook
-from .generation import SpecParser, FeatureGenerator
+from .generation import SpecParser, FeatureGenerator, GenerationError
 from .workspace import WorkspaceManager
 from .log_formatter import (
     format_session_list, format_session_detail, stream_session_pretty,
@@ -243,6 +243,7 @@ def init(
 @click.option('--output', '-o', default='feature-list.json', help='Output filename')
 @click.option('--merge', is_flag=True, help='Merge with existing backlog')
 @click.option('--dry-run', is_flag=True, help='Preview without saving')
+@click.option('--verbose', '-v', is_flag=True, help='Show raw Claude response on error')
 def generate_backlog(
     spec_file: str,
     project_path: str,
@@ -252,7 +253,8 @@ def generate_backlog(
     model: str,
     output: str,
     merge: bool,
-    dry_run: bool
+    dry_run: bool,
+    verbose: bool,
 ):
     """Generate a feature backlog from a specification file using Claude AI.
 
@@ -298,6 +300,14 @@ def generate_backlog(
                 project_name=project_name,
                 project_path=path,
             )
+        except GenerationError as e:
+            console.print(f"[red]Generation failed:[/red] {e}")
+            if verbose and e.raw_response:
+                console.print("\n[yellow]Raw Claude response:[/yellow]")
+                console.print(e.raw_response)
+            elif not verbose and e.raw_response:
+                console.print("[dim]Use --verbose to see raw Claude response[/dim]")
+            return
         except RuntimeError as e:
             console.print(f"[red]Generation failed:[/red] {e}")
             return
