@@ -86,20 +86,52 @@ go build ./...
 - [ ] New dependencies: Verify import syntax matches package API
 - [ ] Run build to confirm imports work
 
-### 5. Testing Requirements
+### 5. Visual Verification (For UI Features)
+
+When implementing UI features, verify visual behavior with Playwright:
+
+```bash
+# Run all E2E tests
+npx playwright test
+
+# Run specific test file
+npx playwright test tests/e2e/feature-name.spec.ts
+
+# Run in headed mode to see the browser
+npx playwright test --headed
+
+# Run specific test by name
+npx playwright test --grep "feature name"
+
+# Update screenshots if visual changes are intentional
+npx playwright test --update-snapshots
+```
+
+**Visual Verification Checklist:**
+- [ ] Run E2E tests for affected UI components
+- [ ] Verify screens render correctly (no layout breaks)
+- [ ] Check interactive elements work (buttons, forms, navigation)
+- [ ] Test error states and edge cases visually
+- [ ] Update baseline screenshots if visual changes are intentional
+
+**If no E2E tests exist for the feature:**
+- [ ] Create a basic Playwright test for the new UI
+- [ ] Capture baseline screenshots for visual regression
+
+### 6. Testing Requirements
 - Run the test suite after each significant change
 - Fix any test failures before moving on
 - Do NOT delete or modify existing tests to make them pass
 - Add new tests for new functionality
 
-### 6. Commit Guidelines
+### 7. Commit Guidelines
 Use clear, descriptive commit messages:
 - `feat: add user authentication endpoint`
 - `fix: handle null case in payment processing`
 - `test: add integration tests for checkout flow`
 - `refactor: extract validation logic to separate module`
 
-### 7. Progress Updates
+### 8. Progress Updates
 Before ending your session, you MUST:
 1. Update claude-progress.txt with:
    - What you accomplished
@@ -108,7 +140,7 @@ Before ending your session, you MUST:
 2. Make a final commit with all changes
 3. Leave a clear handoff message
 
-### 8. Context Threshold Warning
+### 9. Context Threshold Warning
 If you notice you're approaching the context limit (you'll feel responses getting longer to process), prioritize:
 1. Commit current work
 2. Write detailed handoff notes
