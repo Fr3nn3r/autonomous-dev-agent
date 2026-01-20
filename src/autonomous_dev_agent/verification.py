@@ -70,6 +70,19 @@ class FeatureVerifier:
         """
         results: list[VerificationResult] = []
 
+        # BUILD CHECK FIRST - fail fast on compilation errors
+        build_result = self._run_build_check()
+        results.append(build_result)
+        if not build_result.passed and not build_result.skipped:
+            return VerificationReport(
+                feature_id=feature.id,
+                passed=False,
+                results=results,
+                coverage=None,
+                requires_approval=False,
+                approved=False
+            )
+
         # V5: Lint check
         if self.config.lint_command:
             results.append(self._run_lint_check())
@@ -136,6 +149,110 @@ class FeatureVerifier:
             approved=approved,
             approved_by=approved_by
         )
+
+    def run_full_checkpoint(self) -> VerificationReport:
+        """Run full integration checkpoint (all verifications).
+
+        Used for periodic checkpoints to ensure the codebase compiles
+        and passes all checks, regardless of individual feature status.
+
+        Returns:
+            VerificationReport with all check results
+        """
+        results: list[VerificationResult] = []
+
+        # Build first (fail fast)
+        build_result = self._run_build_check()
+        results.append(build_result)
+        if not build_result.passed and not build_result.skipped:
+            return VerificationReport(
+                feature_id="__checkpoint__",
+                passed=False,
+                results=results,
+                coverage=None,
+                requires_approval=False,
+                approved=False
+            )
+
+        # Lint check
+        if self.config.lint_command:
+            results.append(self._run_lint_check())
+
+        # Type check
+        if self.config.type_check_command:
+            results.append(self._run_type_check())
+
+        # Unit tests
+        if self.config.test_command:
+            results.append(self._run_unit_tests())
+
+        all_passed = all(r.passed or r.skipped for r in results)
+        return VerificationReport(
+            feature_id="__checkpoint__",
+            passed=all_passed,
+            results=results,
+            coverage=None,
+            requires_approval=False,
+            approved=False
+        )
+
+    def _run_build_check(self) -> VerificationResult:
+        """Run build check FIRST - fail fast on compilation errors."""
+        build_command = self.config.build_command
+
+        if not build_command and self.config.auto_detect_build:
+            build_command = self._detect_build_command()
+
+        if not build_command:
+            return VerificationResult(
+                name="Build Check",
+                passed=True,
+                skipped=True,
+                message="No build command configured or detected"
+            )
+
+        return self._run_command(
+            name="Build Check",
+            command=build_command,
+            timeout=self.config.build_timeout_seconds
+        )
+
+    def _detect_build_command(self) -> Optional[str]:
+        """Auto-detect build command from project type."""
+        # Node.js with build script
+        package_json = self.project_path / "package.json"
+        if package_json.exists():
+            try:
+                import json
+                data = json.loads(package_json.read_text())
+                if "build" in data.get("scripts", {}):
+                    return "npm run build"
+            except (json.JSONDecodeError, OSError):
+                pass
+
+        # TypeScript without build script
+        if (self.project_path / "tsconfig.json").exists():
+            return "npx tsc --noEmit"
+
+        # Rust
+        if (self.project_path / "Cargo.toml").exists():
+            return "cargo build"
+
+        # Go
+        if (self.project_path / "go.mod").exists():
+            return "go build ./..."
+
+        # Python with pyproject.toml (check for build system)
+        pyproject = self.project_path / "pyproject.toml"
+        if pyproject.exists():
+            try:
+                content = pyproject.read_text()
+                if "build-backend" in content:
+                    return "python -m build --no-isolation"
+            except OSError:
+                pass
+
+        return None
 
     def _run_lint_check(self) -> VerificationResult:
         """Run lint check (V5)."""

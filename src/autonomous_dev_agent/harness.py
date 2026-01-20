@@ -25,7 +25,7 @@ from rich.panel import Panel
 from .cli_utils import find_claude_executable
 from .models import (
     Backlog, Feature, FeatureStatus, HarnessConfig,
-    ProgressEntry, ErrorCategory
+    ProgressEntry, ErrorCategory, CheckpointState, VerificationConfig
 )
 from .progress import ProgressTracker
 from .git_manager import GitManager
@@ -35,6 +35,7 @@ from .session_history import SessionHistory
 from .model_selector import ModelSelector
 from .alert_manager import AlertManager
 from .workspace import WorkspaceManager
+from .verification import FeatureVerifier
 
 # Import orchestration components
 from .orchestration import (
@@ -157,6 +158,9 @@ class AutonomousHarness:
         self.backlog: Optional[Backlog] = None
         self.initialized = False
         self.total_sessions = 0
+
+        # Checkpoint state for periodic build verification
+        self._checkpoint_state = CheckpointState()
 
     async def _run_health_checks(self) -> Tuple[List[str], List[str]]:
         """Run pre-flight health checks.
@@ -351,6 +355,16 @@ class AutonomousHarness:
             # Save backlog after each session
             self.save_backlog()
 
+            # Check for periodic checkpoint after feature completion
+            if result.feature_completed and self.config.checkpoint_interval > 0:
+                self._checkpoint_state.features_since_last_checkpoint += 1
+
+                if self._checkpoint_state.features_since_last_checkpoint >= self.config.checkpoint_interval:
+                    checkpoint_passed = await self._run_checkpoint()
+                    if not checkpoint_passed:
+                        console.print("[red]Checkpoint failed after max fix attempts. Stopping.[/red]")
+                        break
+
             # Check for shutdown after session
             if self._recovery_manager.is_shutdown_requested():
                 await self._recovery_manager.graceful_shutdown()
@@ -381,6 +395,145 @@ class AutonomousHarness:
             f"{CostTracker.format_tokens(cost_summary.total_output_tokens)} out",
             title="Summary"
         ))
+
+
+    async def _run_checkpoint(self) -> bool:
+        """Run periodic integration checkpoint with auto-fix.
+
+        Returns:
+            True if checkpoint passed, False if failed after max attempts
+        """
+        from datetime import datetime
+
+        console.print("\n" + "=" * 60)
+        console.print("[bold yellow]Running Integration Checkpoint[/bold yellow]")
+        console.print("=" * 60)
+
+        # Get verification config, use defaults if not configured
+        verification_config = self.config.verification or VerificationConfig()
+        verifier = FeatureVerifier(self.project_path, verification_config)
+
+        # Run the checkpoint
+        report = verifier.run_full_checkpoint()
+
+        if report.passed:
+            console.print(f"\n[green]{SYM_OK} Checkpoint passed![/green]")
+            self._checkpoint_state.features_since_last_checkpoint = 0
+            self._checkpoint_state.last_checkpoint_at = datetime.now()
+            self._checkpoint_state.last_checkpoint_passed = True
+            self._checkpoint_state.current_fix_attempt = 0
+            return True
+
+        # Checkpoint failed - show results
+        console.print(f"\n[red]{SYM_FAIL} Checkpoint failed![/red]")
+        for result in report.results:
+            if result.skipped:
+                console.print(f"  [dim][-] {result.name}: {result.message}[/dim]")
+            elif result.passed:
+                console.print(f"  [green]{SYM_OK} {result.name}[/green]: {result.message}")
+            else:
+                console.print(f"  [red]{SYM_FAIL} {result.name}[/red]: {result.message}")
+                if result.details:
+                    # Truncate long details
+                    details = result.details[:500] + "..." if len(result.details) > 500 else result.details
+                    console.print(f"    [dim]{details}[/dim]")
+
+        # Attempt auto-fix
+        for attempt in range(1, self.config.checkpoint_max_fix_attempts + 1):
+            self._checkpoint_state.current_fix_attempt = attempt
+            console.print(f"\n[yellow]Auto-fix attempt {attempt}/{self.config.checkpoint_max_fix_attempts}...[/yellow]")
+
+            fix_result = await self._run_fix_session(report)
+
+            # Re-run checkpoint after fix attempt
+            report = verifier.run_full_checkpoint()
+
+            if report.passed:
+                console.print(f"\n[green]{SYM_OK} Checkpoint passed after fix attempt {attempt}![/green]")
+                self._checkpoint_state.features_since_last_checkpoint = 0
+                self._checkpoint_state.last_checkpoint_at = datetime.now()
+                self._checkpoint_state.last_checkpoint_passed = True
+                self._checkpoint_state.current_fix_attempt = 0
+                return True
+
+            console.print(f"[red]{SYM_FAIL} Checkpoint still failing after fix attempt {attempt}[/red]")
+
+        # All fix attempts exhausted
+        self._checkpoint_state.last_checkpoint_passed = False
+        return False
+
+    async def _run_fix_session(self, failed_report) -> SessionResult:
+        """Run auto-fix session to repair checkpoint failures.
+
+        Args:
+            failed_report: The VerificationReport with failed checks
+
+        Returns:
+            SessionResult from the fix session
+        """
+        # Format error description
+        error_lines = []
+        for result in failed_report.results:
+            if not result.passed and not result.skipped:
+                error_lines.append(f"## {result.name}")
+                error_lines.append(f"**Status**: FAILED")
+                error_lines.append(f"**Message**: {result.message}")
+                if result.details:
+                    error_lines.append(f"**Details**:\n```\n{result.details}\n```")
+                error_lines.append("")
+
+        error_description = "\n".join(error_lines)
+
+        # Load the checkpoint fix prompt template
+        try:
+            fix_prompt = self._orchestrator._load_prompt_template("checkpoint_fix")
+        except FileNotFoundError:
+            # Fallback to inline prompt if template not found
+            fix_prompt = """You are an autonomous development agent performing an emergency fix session.
+
+## Context
+- Working Directory: {project_path}
+- Fix Attempt: {fix_attempt}
+
+## Problem
+An integration checkpoint has failed. Fix the errors below.
+
+{error_description}
+
+## Instructions
+
+1. **Analyze** - Read errors carefully. Fix the FIRST error (later ones often cascade)
+2. **Fix** - Make minimal, focused changes
+3. **Verify** - Re-run the failing command after each fix
+4. **Commit** - `fix: resolve checkpoint failures`
+
+## Constraints
+- Do NOT introduce new features
+- Do NOT delete tests to make them pass
+- Focus ONLY on fixing the failing checks
+"""
+
+        prompt = fix_prompt.format(
+            project_path=str(self.project_path),
+            error_description=error_description,
+            fix_attempt=self._checkpoint_state.current_fix_attempt
+        )
+
+        # Create a session for the fix
+        session = self.sessions.create_session()
+
+        # Run the fix session
+        console.print("[dim]Running fix session...[/dim]")
+        result = await session.run(prompt)
+
+        # Log the fix attempt
+        self.progress.append_entry(ProgressEntry(
+            session_id=session.session_id,
+            action="checkpoint_fix",
+            summary=f"Auto-fix attempt {self._checkpoint_state.current_fix_attempt} for checkpoint failures"
+        ))
+
+        return result
 
 
 async def run_harness(

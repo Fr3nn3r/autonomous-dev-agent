@@ -358,6 +358,16 @@ class HarnessConfig(BaseModel):
         description="Verification settings for Phase 3 quality gates"
     )
 
+    # Checkpoint configuration
+    checkpoint_interval: int = Field(
+        default=3,
+        description="Run full verification after every N completed features (0 to disable)"
+    )
+    checkpoint_max_fix_attempts: int = Field(
+        default=2,
+        description="Maximum auto-fix sessions when checkpoint fails"
+    )
+
 
 class UsageStats(BaseModel):
     """Token usage and cost statistics for a session or operation."""
@@ -708,6 +718,20 @@ class VerificationConfig(BaseModel):
         description="Timeout for E2E tests (10 minutes default)"
     )
 
+    # Build verification (runs FIRST - fail fast)
+    build_command: Optional[str] = Field(
+        default=None,
+        description="Build command (e.g., 'npm run build'). Runs before tests for fail-fast."
+    )
+    build_timeout_seconds: int = Field(
+        default=300,
+        description="Timeout for build command (5 minutes default)"
+    )
+    auto_detect_build: bool = Field(
+        default=True,
+        description="Auto-detect build command from project type if not specified"
+    )
+
 
 class VerificationResult(BaseModel):
     """Result of a verification check."""
@@ -770,6 +794,26 @@ class VerificationReport(BaseModel):
     timestamp: datetime = Field(
         default_factory=datetime.now,
         description="When verification was run"
+    )
+
+
+class CheckpointState(BaseModel):
+    """Tracks periodic checkpoint status for build verification."""
+    features_since_last_checkpoint: int = Field(
+        default=0,
+        description="Number of features completed since last checkpoint"
+    )
+    last_checkpoint_at: Optional[datetime] = Field(
+        default=None,
+        description="When the last checkpoint was run"
+    )
+    last_checkpoint_passed: bool = Field(
+        default=True,
+        description="Whether the last checkpoint passed"
+    )
+    current_fix_attempt: int = Field(
+        default=0,
+        description="Current auto-fix attempt number (0 if not fixing)"
     )
 
 

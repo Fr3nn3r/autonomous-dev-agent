@@ -50,20 +50,56 @@ Examples:
 
 **If a command seems to hang or fails repeatedly, it likely needs a flag to skip interactive prompts.**
 
-### 4. Testing Requirements
+### 4. Build Verification (MANDATORY)
+
+**CRITICAL**: Before running tests, ALWAYS verify the code compiles:
+
+**For JavaScript/TypeScript:**
+```bash
+npm run build   # If build script exists
+npx tsc --noEmit  # Type check only
+```
+
+**For Python:**
+```bash
+python -m py_compile your_file.py
+```
+
+**For Rust:**
+```bash
+cargo build
+```
+
+**For Go:**
+```bash
+go build ./...
+```
+
+**Build Verification Checklist:**
+- [ ] Run build command AFTER making changes
+- [ ] Fix ALL build errors before proceeding
+- [ ] Do NOT skip build errors - they indicate fundamental issues
+- [ ] If build fails, the feature is NOT complete
+
+**Integration Checklist (when creating new files):**
+- [ ] New type files: Add export to barrel file (e.g., `types/index.ts`)
+- [ ] New dependencies: Verify import syntax matches package API
+- [ ] Run build to confirm imports work
+
+### 5. Testing Requirements
 - Run the test suite after each significant change
 - Fix any test failures before moving on
 - Do NOT delete or modify existing tests to make them pass
 - Add new tests for new functionality
 
-### 5. Commit Guidelines
+### 6. Commit Guidelines
 Use clear, descriptive commit messages:
 - `feat: add user authentication endpoint`
 - `fix: handle null case in payment processing`
 - `test: add integration tests for checkout flow`
 - `refactor: extract validation logic to separate module`
 
-### 6. Progress Updates
+### 7. Progress Updates
 Before ending your session, you MUST:
 1. Update claude-progress.txt with:
    - What you accomplished
@@ -72,7 +108,7 @@ Before ending your session, you MUST:
 2. Make a final commit with all changes
 3. Leave a clear handoff message
 
-### 7. Context Threshold Warning
+### 8. Context Threshold Warning
 If you notice you're approaching the context limit (you'll feel responses getting longer to process), prioritize:
 1. Commit current work
 2. Write detailed handoff notes

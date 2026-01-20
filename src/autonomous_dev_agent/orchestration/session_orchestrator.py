@@ -145,21 +145,27 @@ class SessionOrchestrator:
 
     def _format_quality_gates_info(self, feature: Feature) -> str:
         """Format quality gates information for the prompt."""
-        gates = self._get_merged_gates(feature)
-        if not gates:
-            return "No quality gates configured for this feature."
-
         info = []
-        if gates.require_tests:
-            info.append("- Tests are required before completion")
-        if gates.max_file_lines:
-            info.append(f"- Files must be under {gates.max_file_lines} lines")
-        if gates.lint_command:
-            info.append(f"- Lint check will run: `{gates.lint_command}`")
-        if gates.type_check_command:
-            info.append(f"- Type check will run: `{gates.type_check_command}`")
-        if gates.custom_validators:
-            info.append(f"- {len(gates.custom_validators)} custom validator(s) configured")
+
+        # Build verification info (from verification config)
+        if self.config.verification:
+            if self.config.verification.build_command:
+                info.append(f"- **BUILD CHECK (MANDATORY)**: `{self.config.verification.build_command}`")
+            elif self.config.verification.auto_detect_build:
+                info.append("- **BUILD CHECK (MANDATORY)**: Auto-detected from project type")
+
+        gates = self._get_merged_gates(feature)
+        if gates:
+            if gates.require_tests:
+                info.append("- Tests are required before completion")
+            if gates.max_file_lines:
+                info.append(f"- Files must be under {gates.max_file_lines} lines")
+            if gates.lint_command:
+                info.append(f"- Lint check will run: `{gates.lint_command}`")
+            if gates.type_check_command:
+                info.append(f"- Type check will run: `{gates.type_check_command}`")
+            if gates.custom_validators:
+                info.append(f"- {len(gates.custom_validators)} custom validator(s) configured")
 
         if not info:
             return "No quality gates configured for this feature."
