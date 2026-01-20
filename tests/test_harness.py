@@ -479,8 +479,8 @@ class TestHealthChecks:
                 assert any("git" in e.lower() for e in errors)
 
     @pytest.mark.asyncio
-    async def test_health_checks_fail_no_api_key(self, harness):
-        """Should fail when ANTHROPIC_API_KEY not set."""
+    async def test_health_checks_no_error_without_api_key(self, harness):
+        """Should not error when ANTHROPIC_API_KEY not set - subscription auth allowed."""
         with patch.dict('os.environ', {}, clear=True):
             with patch.object(harness.git, 'is_git_repo', return_value=True):
                 with patch.object(harness.git, 'get_status') as mock_status:
@@ -488,7 +488,9 @@ class TestHealthChecks:
 
                     errors, warnings = await harness._run_health_checks()
 
-                    assert any("anthropic_api_key" in e.lower() for e in errors)
+                    # No longer an error - subscription auth is allowed
+                    # (warning is printed to console but not in warnings list)
+                    assert not any("anthropic_api_key" in e.lower() for e in errors)
 
     @pytest.mark.asyncio
     async def test_health_checks_warn_uncommitted(self, harness):

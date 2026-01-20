@@ -147,7 +147,7 @@ class TestFeatureGenerator:
         """Test generator initializes with default values."""
         generator = FeatureGenerator()
 
-        assert generator.model == "claude-sonnet-4-20250514"
+        assert generator.model == "claude-opus-4-20250514"
         assert generator.min_features == 20
         assert generator.max_features == 50
 
@@ -292,9 +292,9 @@ class TestFeatureGenerator:
         feature2 = generator._parse_feature_item(item2)
         assert feature2.priority == 0
 
-    @patch('subprocess.run')
-    def test_generate_success(self, mock_run, tmp_path):
-        """Test successful feature generation with mocked Claude CLI."""
+    @patch.object(FeatureGenerator, '_call_claude')
+    def test_generate_success(self, mock_call_claude, tmp_path):
+        """Test successful feature generation with mocked Claude call."""
         # Create a spec file
         spec_file = tmp_path / "spec.md"
         spec_file.write_text("""# Test Application
@@ -303,7 +303,7 @@ This is a test specification for generating features.
 The application should have user management and data processing.
 """)
 
-        # Mock Claude CLI response
+        # Mock Claude response
         mock_response = '''```json
 [
   {
@@ -317,11 +317,7 @@ The application should have user management and data processing.
   }
 ]
 ```'''
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout=mock_response,
-            stderr=""
-        )
+        mock_call_claude.return_value = mock_response
 
         generator = FeatureGenerator(min_features=1, max_features=10)
         result = generator.generate_from_file(
@@ -333,38 +329,30 @@ The application should have user management and data processing.
         assert isinstance(result, GeneratedBacklog)
         assert result.feature_count == 1
         assert result.backlog.project_name == "Test Project"
-        assert result.model_used == "claude-sonnet-4-20250514"
+        assert result.model_used == "claude-opus-4-20250514"
 
-    @patch('subprocess.run')
-    def test_generate_cli_error(self, mock_run, tmp_path):
-        """Test handling Claude CLI errors."""
+    @patch.object(FeatureGenerator, '_call_claude')
+    def test_generate_cli_error(self, mock_call_claude, tmp_path):
+        """Test handling Claude SDK errors."""
         spec_file = tmp_path / "spec.txt"
         spec_file.write_text("A" * 200)
 
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stdout="",
-            stderr="API error: rate limit exceeded"
-        )
+        mock_call_claude.side_effect = RuntimeError("Claude Agent SDK error: rate limit exceeded")
 
         generator = FeatureGenerator()
 
         with pytest.raises(RuntimeError) as exc_info:
             generator.generate_from_file(spec_file)
 
-        assert "Claude CLI failed" in str(exc_info.value)
+        assert "Claude Agent SDK error" in str(exc_info.value)
 
-    @patch('subprocess.run')
-    def test_generate_empty_response(self, mock_run, tmp_path):
+    @patch.object(FeatureGenerator, '_call_claude')
+    def test_generate_empty_response(self, mock_call_claude, tmp_path):
         """Test handling empty Claude response."""
         spec_file = tmp_path / "spec.txt"
         spec_file.write_text("A" * 200)
 
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout="",
-            stderr=""
-        )
+        mock_call_claude.return_value = ""
 
         generator = FeatureGenerator()
 
