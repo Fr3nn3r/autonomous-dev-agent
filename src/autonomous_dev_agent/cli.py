@@ -55,12 +55,16 @@ def main():
 @click.option('--threshold', default=70.0, help='Context threshold percentage for handoff')
 @click.option('--max-sessions', type=int, help='Maximum sessions before stopping')
 @click.option('--backlog', default='feature-list.json', help='Backlog file name')
+@click.option('--with-dashboard', is_flag=True, help='Start embedded dashboard server for live monitoring')
+@click.option('--dashboard-port', default=8000, help='Port for embedded dashboard (default: 8000)')
 def run(
     project_path: str,
     model: str,
     threshold: float,
     max_sessions: Optional[int],
-    backlog: str
+    backlog: str,
+    with_dashboard: bool,
+    dashboard_port: int
 ):
     """Run the autonomous agent on a project.
 
@@ -68,6 +72,10 @@ def run(
 
     Uses the Claude Agent SDK with API credits for billing. Provides real-time
     streaming output and detailed observability.
+
+    Use --with-dashboard to start an embedded API server for live monitoring.
+    Connect the dashboard frontend to http://localhost:<port> to see real-time
+    agent activity, tool calls, and token usage.
     """
     config = HarnessConfig(
         model=model,
@@ -79,10 +87,55 @@ def run(
     console.print(f"[bold]Mode:[/bold] SDK (API credits)")
     console.print(f"[bold]Model:[/bold] {model}")
 
+    if with_dashboard:
+        console.print(f"[bold]Dashboard:[/bold] http://0.0.0.0:{dashboard_port}")
+        console.print(f"[dim]WebSocket: ws://0.0.0.0:{dashboard_port}/ws/events[/dim]")
+
     harness = AutonomousHarness(project_path, config)
 
+    async def run_with_dashboard():
+        """Run harness with embedded dashboard server."""
+        from .api.main import create_app
+        from .api.websocket import start_file_watcher
+        import uvicorn
+
+        # Create FastAPI app
+        app = create_app(Path(project_path))
+
+        # Configure uvicorn server
+        uvi_config = uvicorn.Config(
+            app,
+            host="0.0.0.0",
+            port=dashboard_port,
+            log_level="warning",  # Reduce noise
+        )
+        server = uvicorn.Server(uvi_config)
+
+        # Start file watcher for file-based events
+        await start_file_watcher(Path(project_path))
+
+        async def run_server():
+            """Run uvicorn server until cancelled."""
+            try:
+                await server.serve()
+            except asyncio.CancelledError:
+                pass
+
+        async def run_harness_and_stop():
+            """Run harness, then signal server to stop."""
+            try:
+                await harness.run()
+            finally:
+                server.should_exit = True
+
+        # Run both concurrently - server runs until harness completes
+        await asyncio.gather(run_server(), run_harness_and_stop())
+
     try:
-        asyncio.run(harness.run())
+        if with_dashboard:
+            asyncio.run(run_with_dashboard())
+        else:
+            asyncio.run(harness.run())
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted by user[/yellow]")
     except Exception as e:
@@ -670,6 +723,58 @@ def rollback(project_path: str, commit_hash: Optional[str], hard: bool, list_com
     console.print("  --to      Reset to a specific commit")
     console.print("  --hard    Hard reset (use with --to)")
     console.print("\nRun 'ada rollback --help' for more info")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+@click.option('--reason', '-r', default='Stop requested via CLI', help='Reason for stopping')
+@click.option('--cancel', is_flag=True, help='Cancel a pending stop request')
+@click.option('--status', 'show_status', is_flag=True, help='Check if stop is pending')
+def stop(project_path: str, reason: str, cancel: bool, show_status: bool):
+    """Request graceful shutdown of a running agent.
+
+    Creates a stop signal that the agent checks after each tool call.
+    The agent will finish current work, commit changes, and exit cleanly.
+
+    \b
+    Examples:
+        ada stop ./my-project                    # Request stop
+        ada stop ./my-project -r "Lunch break"   # Stop with reason
+        ada stop ./my-project --status           # Check if stop pending
+        ada stop ./my-project --cancel           # Cancel pending stop
+    """
+    path = Path(project_path)
+    stop_file = path / ".ada" / "stop-requested"
+
+    if show_status:
+        if stop_file.exists():
+            content = stop_file.read_text().strip().split('\n')
+            timestamp = content[0] if content else "unknown"
+            stop_reason = content[1] if len(content) > 1 else "No reason given"
+            console.print(f"[yellow]Stop request pending[/yellow]")
+            console.print(f"  Requested at: {timestamp}")
+            console.print(f"  Reason: {stop_reason}")
+        else:
+            console.print("[green]No stop request pending[/green]")
+        return
+
+    if cancel:
+        if stop_file.exists():
+            stop_file.unlink()
+            console.print("[green]OK[/green] Stop request cancelled")
+        else:
+            console.print("[yellow]No stop request was pending[/yellow]")
+        return
+
+    # Create stop request
+    stop_file.parent.mkdir(parents=True, exist_ok=True)
+    stop_file.write_text(f"{datetime.now().isoformat()}\n{reason}")
+
+    console.print("[green]OK[/green] Stop request sent")
+    console.print(f"  Stop file: {stop_file}")
+    console.print(f"  Reason: {reason}")
+    console.print("\n[dim]The agent will stop after completing its current operation.[/dim]")
+    console.print("[dim]Use 'ada stop <path> --status' to check progress.[/dim]")
 
 
 @main.command()
@@ -1392,6 +1497,121 @@ def logs(
         table = format_session_list(sessions)
         console.print(table)
         console.print(f"\n[dim]Showing {len(sessions)} session(s)[/dim]")
+
+
+@main.command()
+@click.argument('project_path', type=click.Path(exists=True))
+@click.option('--fix', is_flag=True, help='Auto-fix safe issues')
+@click.option('--fix-all', is_flag=True, help='Fix all issues with prompts')
+@click.option('--json', 'output_json', is_flag=True, help='Output as JSON')
+def health(project_path: str, fix: bool, fix_all: bool, output_json: bool):
+    """Check workspace health and optionally fix issues.
+
+    Performs comprehensive health checks on the .ada/ workspace including:
+    - Crashed sessions (session_start without session_end)
+    - Stale current session pointers
+    - Orphan log files
+    - Missing log files referenced by index
+    - Session ID collisions
+    - Uncommitted git changes
+    - Features stuck in in_progress
+
+    \b
+    Examples:
+        ada health ./my-project                  # Check health
+        ada health ./my-project --fix            # Auto-fix safe issues
+        ada health ./my-project --fix-all        # Fix all issues with prompts
+        ada health ./my-project --json           # Output as JSON
+    """
+    from .workspace_health import WorkspaceHealthChecker, WorkspaceCleaner
+    from .models import HealthIssueSeverity
+
+    path = Path(project_path)
+    workspace = WorkspaceManager(path)
+
+    if not workspace.exists():
+        console.print("[yellow]No .ada/ workspace found. Run 'ada init' first.[/yellow]")
+        return
+
+    # Run health checks
+    checker = WorkspaceHealthChecker(path, workspace=workspace)
+    report = checker.check_all()
+
+    # Auto-fix if requested
+    if fix or fix_all:
+        cleaner = WorkspaceCleaner(path, workspace=workspace)
+        fixed = cleaner.fix_auto(report)
+        if fixed:
+            console.print(f"[green]Auto-fixed {len(fixed)} issue(s)[/green]")
+
+    # Handle non-auto-fixable issues with prompts (--fix-all)
+    if fix_all:
+        for issue in report.issues:
+            if not issue.auto_fixable:
+                console.print(f"\n[yellow]Cannot auto-fix:[/yellow] {issue.message}")
+                if issue.fix_description:
+                    console.print(f"  [dim]{issue.fix_description}[/dim]")
+
+    # Output results
+    if output_json:
+        import json
+        print(json.dumps(report.model_dump(mode="json"), default=str, indent=2))
+        return
+
+    # Console output
+    if report.healthy:
+        console.print(f"\n[green]{SYM_OK} Workspace is healthy[/green]")
+        if report.issues_fixed:
+            console.print(f"  [dim]({len(report.issues_fixed)} issue(s) were fixed)[/dim]")
+        return
+
+    console.print(f"\n[bold]Workspace Health Report[/bold]")
+    console.print(f"Project: {path}")
+    console.print(f"Checked: {report.checked_at.strftime('%Y-%m-%d %H:%M:%S')}")
+    console.print()
+
+    # Summary
+    console.print(f"[red]Critical:[/red] {report.critical_count}  "
+                  f"[yellow]Warning:[/yellow] {report.warning_count}  "
+                  f"[dim]Info:[/dim] {report.info_count}")
+
+    if report.issues_fixed:
+        console.print(f"[green]Fixed:[/green] {len(report.issues_fixed)}")
+
+    # Show issues
+    console.print("\n[bold]Issues:[/bold]")
+
+    severity_colors = {
+        HealthIssueSeverity.CRITICAL: "red",
+        HealthIssueSeverity.WARNING: "yellow",
+        HealthIssueSeverity.INFO: "dim",
+    }
+
+    for issue in report.issues:
+        color = severity_colors.get(issue.severity, "white")
+        fix_marker = "[auto]" if issue.auto_fixable else ""
+        console.print(f"  [{color}]{issue.severity.value.upper()}[/{color}] {issue.message} {fix_marker}")
+        if issue.details:
+            console.print(f"    [dim]{issue.details}[/dim]")
+        if issue.fix_description and not fix and not fix_all:
+            console.print(f"    [dim]Fix: {issue.fix_description}[/dim]")
+
+    # Show fixed issues if any
+    if report.issues_fixed:
+        console.print("\n[bold]Fixed:[/bold]")
+        for issue in report.issues_fixed:
+            console.print(f"  [green]{SYM_OK}[/green] {issue.message}")
+
+    # Hint for fixing
+    if not fix and not fix_all:
+        auto_fixable = sum(1 for i in report.issues if i.auto_fixable)
+        if auto_fixable > 0:
+            console.print(f"\n[dim]Run with --fix to auto-fix {auto_fixable} issue(s)[/dim]")
+
+    # Error exit code if critical issues
+    if report.critical_count > 0:
+        console.print(f"\n[red]{SYM_FAIL} Critical issues found - run 'ada health --fix-all' to attempt repair[/red]")
+        raise SystemExit(1)
 
 
 if __name__ == '__main__':

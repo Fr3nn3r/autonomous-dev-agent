@@ -11,7 +11,7 @@ from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .routes import status, backlog, sessions, progress, projections, timeline, alerts
+from .routes import status, backlog, sessions, progress, projections, timeline, alerts, control
 from .websocket import router as websocket_router
 
 
@@ -50,6 +50,7 @@ def create_app(project_path: Optional[Path] = None) -> FastAPI:
     app.include_router(projections.router, prefix="/api", tags=["projections"])
     app.include_router(timeline.router, prefix="/api", tags=["timeline"])
     app.include_router(alerts.router, prefix="/api", tags=["alerts"])
+    app.include_router(control.router, prefix="/api", tags=["control"])
     app.include_router(websocket_router, prefix="/ws", tags=["websocket"])
 
     @app.get("/")
@@ -95,6 +96,10 @@ def run_dashboard(
         port=port,
         reload=reload,
     )
+
+
+# Default app instance for uvicorn (e.g., uvicorn ...main:app)
+app = create_app()
 
 
 async def run_dashboard_async(

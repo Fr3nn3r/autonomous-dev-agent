@@ -1,5 +1,5 @@
 """API routes for the dashboard."""
 
-from . import status, backlog, sessions, progress, projections, timeline, alerts
+from . import status, backlog, sessions, progress, projections, timeline, alerts, control
 
-__all__ = ["status", "backlog", "sessions", "progress", "projections", "timeline", "alerts"]
+__all__ = ["status", "backlog", "sessions", "progress", "projections", "timeline", "alerts", "control"]

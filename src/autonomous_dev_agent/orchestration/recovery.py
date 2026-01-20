@@ -2,12 +2,14 @@
 
 Handles:
 - Signal handlers for graceful shutdown (SIGINT, SIGTERM)
+- File-based stop signal detection
 - State persistence for session recovery
 - Graceful shutdown with auto-commit of uncommitted work
 """
 
 import signal
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, Any, TYPE_CHECKING
 
@@ -24,6 +26,9 @@ if TYPE_CHECKING:
 
 
 console = Console()
+
+# Stop request file path (relative to project directory)
+STOP_REQUEST_FILE = ".ada/stop-requested"
 
 
 class SessionRecoveryManager:
@@ -92,10 +97,48 @@ class SessionRecoveryManager:
     def is_shutdown_requested(self) -> bool:
         """Check if shutdown has been requested.
 
+        Checks both:
+        1. Signal flag (from SIGINT/SIGTERM handlers)
+        2. Stop request file (.ada/stop-requested)
+
         Returns:
-            True if shutdown signal was received
+            True if shutdown was requested via signal or file
         """
-        return self._shutdown_requested
+        if self._shutdown_requested:
+            return True
+
+        # Check for stop request file
+        stop_file = self.project_path / STOP_REQUEST_FILE
+        if stop_file.exists():
+            console.print("[yellow]Stop request file detected...[/yellow]")
+            self._shutdown_requested = True
+            return True
+
+        return False
+
+    def request_stop(self, reason: str = "User requested stop") -> Path:
+        """Create stop request file to signal graceful shutdown.
+
+        Args:
+            reason: Reason for the stop request
+
+        Returns:
+            Path to the created stop file
+        """
+        stop_file = self.project_path / STOP_REQUEST_FILE
+        stop_file.parent.mkdir(parents=True, exist_ok=True)
+        stop_file.write_text(f"{datetime.now().isoformat()}\n{reason}")
+        return stop_file
+
+    def _clear_stop_request(self) -> None:
+        """Remove stop request file after shutdown completes."""
+        stop_file = self.project_path / STOP_REQUEST_FILE
+        if stop_file.exists():
+            try:
+                stop_file.unlink()
+                console.print("[dim]Cleared stop request file[/dim]")
+            except OSError:
+                pass  # File may have been removed already
 
     def set_current_context(
         self,
@@ -160,6 +203,9 @@ class SessionRecoveryManager:
                 handoff_notes="Session interrupted by shutdown signal"
             )
             console.print("[green]Session state saved for recovery[/green]")
+
+        # Clean up stop request file if it exists
+        self._clear_stop_request()
 
         console.print("[green]Shutdown complete.[/green]")
 

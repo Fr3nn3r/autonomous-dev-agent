@@ -127,17 +127,24 @@ async def websocket_events(websocket: WebSocket):
 
 
 # Event emission functions for use by the harness
-async def emit_session_started(session_id: str, feature_id: Optional[str], model: str):
+async def emit_session_started(
+    session_id: str,
+    feature_id: Optional[str],
+    model: str,
+    feature_name: Optional[str] = None
+):
     """Emit session started event.
 
     Args:
         session_id: ID of the started session
         feature_id: ID of the feature being worked on
         model: Model being used
+        feature_name: Name of the feature being worked on
     """
     await manager.broadcast("session.started", {
         "session_id": session_id,
         "feature_id": feature_id,
+        "feature_name": feature_name or feature_id,
         "model": model,
     })
 
@@ -152,6 +159,8 @@ async def emit_session_completed(
 ):
     """Emit session completed event.
 
+    Also emits session.ended for frontend compatibility.
+
     Args:
         session_id: ID of the completed session
         feature_id: ID of the feature worked on
@@ -160,14 +169,17 @@ async def emit_session_completed(
         input_tokens: Input tokens used
         output_tokens: Output tokens generated
     """
-    await manager.broadcast("session.completed", {
+    event_data = {
         "session_id": session_id,
         "feature_id": feature_id,
         "outcome": outcome,
         "cost_usd": cost_usd,
         "input_tokens": input_tokens,
         "output_tokens": output_tokens,
-    })
+    }
+    # Emit both events for compatibility
+    await manager.broadcast("session.completed", event_data)
+    await manager.broadcast("session.ended", event_data)
 
 
 async def emit_feature_started(feature_id: str, feature_name: str):
@@ -231,6 +243,119 @@ async def emit_progress_update(entry: str):
     })
 
 
+# ============================================================================
+# Live Agent Monitoring Events
+# ============================================================================
+
+async def emit_agent_message(
+    session_id: str,
+    content: str,
+    summary: str,
+    tool_calls: list,
+    turn: int
+):
+    """Emit agent message event for live monitoring.
+
+    Args:
+        session_id: Current session ID
+        content: Message content (truncated if too long)
+        summary: Brief summary of the message
+        tool_calls: List of tool calls made in this turn
+        turn: Current turn number
+    """
+    await manager.broadcast("agent.message", {
+        "session_id": session_id,
+        "content": content,
+        "summary": summary,
+        "tool_calls": tool_calls,
+        "turn": turn,
+    })
+
+
+async def emit_tool_call(
+    session_id: str,
+    call_id: str,
+    tool_name: str,
+    parameters: dict
+):
+    """Emit tool call event for live monitoring.
+
+    Args:
+        session_id: Current session ID
+        call_id: Unique ID for this tool call
+        tool_name: Name of the tool being called
+        parameters: Tool parameters
+    """
+    await manager.broadcast("tool.call", {
+        "session_id": session_id,
+        "call_id": call_id,
+        "tool_name": tool_name,
+        "parameters": parameters,
+    })
+
+
+async def emit_tool_result(
+    session_id: str,
+    call_id: str,
+    tool_name: str,
+    success: bool,
+    result: str,
+    duration_ms: Optional[int] = None
+):
+    """Emit tool result event for live monitoring.
+
+    Args:
+        session_id: Current session ID
+        call_id: ID of the tool call this is a result for
+        tool_name: Name of the tool
+        success: Whether the tool call succeeded
+        result: Result content (truncated if too long)
+        duration_ms: Duration of tool execution
+    """
+    await manager.broadcast("tool.result", {
+        "session_id": session_id,
+        "call_id": call_id,
+        "tool_name": tool_name,
+        "success": success,
+        "result": result,
+        "duration_ms": duration_ms,
+    })
+
+
+async def emit_context_update(
+    session_id: str,
+    input_tokens: int,
+    output_tokens: int,
+    total_tokens: int,
+    context_percent: float,
+    cost_usd: float,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0
+):
+    """Emit context/usage update event for live monitoring.
+
+    Args:
+        session_id: Current session ID
+        input_tokens: Input tokens used so far
+        output_tokens: Output tokens generated so far
+        total_tokens: Total tokens (input + output)
+        context_percent: Percentage of context window used
+        cost_usd: Estimated cost in USD
+        cache_read_tokens: Tokens read from cache
+        cache_write_tokens: Tokens written to cache
+    """
+    await manager.broadcast("cost.update", {
+        "session_id": session_id,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total_tokens,
+        "context_percent": context_percent,
+        "cost_usd": cost_usd,
+        "cache_read_tokens": cache_read_tokens,
+        "cache_write_tokens": cache_write_tokens,
+    })
+
+
 async def emit_alert(
     alert_id: str,
     alert_type: str,
@@ -262,6 +387,28 @@ async def emit_alert(
     })
 
 
+# ============================================================================
+# Stop Control Events
+# ============================================================================
+
+async def emit_stop_requested(reason: str, requested_at: str):
+    """Emit stop requested event.
+
+    Args:
+        reason: Reason for the stop request
+        requested_at: ISO timestamp when stop was requested
+    """
+    await manager.broadcast("stop.requested", {
+        "reason": reason,
+        "requested_at": requested_at,
+    })
+
+
+async def emit_stop_cleared():
+    """Emit stop cleared event (stop request was cancelled or completed)."""
+    await manager.broadcast("stop.cleared", {})
+
+
 class FileWatcher:
     """Watches project files for changes and emits events.
 
@@ -291,12 +438,18 @@ class FileWatcher:
             ".ada_session_history.json",
             "claude-progress.txt",
             ".ada_alerts.json",
+            ".ada/stop-requested",
         ]
 
-        # Initialize last modification times
+        # Track file existence for detecting creation/deletion
+        self._file_existed: dict[str, bool] = {}
+
+        # Initialize last modification times and existence tracking
         for filename in files_to_watch:
             filepath = self.project_path / filename
-            if filepath.exists():
+            exists = filepath.exists()
+            self._file_existed[filename] = exists
+            if exists:
                 self._last_mtime[filename] = filepath.stat().st_mtime
 
         while self._running:
@@ -304,7 +457,33 @@ class FileWatcher:
 
             for filename in files_to_watch:
                 filepath = self.project_path / filename
-                if not filepath.exists():
+                exists = filepath.exists()
+                existed = self._file_existed.get(filename, False)
+
+                # Handle file creation (didn't exist before, exists now)
+                if exists and not existed:
+                    self._file_existed[filename] = True
+                    self._last_mtime[filename] = filepath.stat().st_mtime
+
+                    # Special handling for stop-requested file creation
+                    if filename == ".ada/stop-requested":
+                        content = filepath.read_text().strip().split('\n')
+                        requested_at = content[0] if content else ""
+                        reason = content[1] if len(content) > 1 else "No reason given"
+                        await emit_stop_requested(reason, requested_at)
+                    continue
+
+                # Handle file deletion (existed before, doesn't exist now)
+                if not exists and existed:
+                    self._file_existed[filename] = False
+                    self._last_mtime.pop(filename, None)
+
+                    # Special handling for stop-requested file deletion
+                    if filename == ".ada/stop-requested":
+                        await emit_stop_cleared()
+                    continue
+
+                if not exists:
                     continue
 
                 current_mtime = filepath.stat().st_mtime
@@ -334,6 +513,12 @@ class FileWatcher:
                         await manager.broadcast("alerts.updated", {
                             "file": filename
                         })
+                    elif filename == ".ada/stop-requested":
+                        # File was modified (e.g., reason changed)
+                        content = filepath.read_text().strip().split('\n')
+                        requested_at = content[0] if content else ""
+                        reason = content[1] if len(content) > 1 else "No reason given"
+                        await emit_stop_requested(reason, requested_at)
 
     def stop(self):
         """Stop watching for file changes."""
