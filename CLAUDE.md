@@ -160,38 +160,3 @@ backlog_file: str = "feature-list.json"
 auto_commit: bool = True
 run_tests_before_commit: bool = True
 ```
-
-## Development Scripts (WSL)
-
-Scripts for running the dashboard in WSL with Windows host access. All services bind to `0.0.0.0` for cross-machine accessibility.
-
-```bash
-# Start/stop services
-./scripts/start-all.sh              # Start backend + frontend
-./scripts/stop-all.sh               # Stop all services
-./scripts/status.sh                 # Check service status and WSL IP
-
-# Individual services
-./scripts/start-backend.sh          # FastAPI on port 8000
-./scripts/stop-backend.sh
-./scripts/start-frontend.sh         # Vite on port 5173
-./scripts/stop-frontend.sh
-
-# Logs
-./scripts/logs.sh                   # View all logs
-./scripts/logs.sh backend           # Backend only
-./scripts/logs.sh frontend -f       # Follow frontend logs
-```
-
-**Port allocation:**
-| Service | Port | Environment Variable |
-|---------|------|---------------------|
-| Backend (FastAPI) | 8000 | `ADA_BACKEND_PORT` |
-| Frontend (Vite) | 5173 | `ADA_FRONTEND_PORT` |
-
-**Files:**
-- `logs/backend.log` - Backend output (gitignored)
-- `logs/frontend.log` - Frontend output (gitignored)
-- `logs/*.pid` - Process ID files for stop scripts
-
-**Access from Windows:** Run `./scripts/status.sh` to see the WSL IP address, then use `http://<WSL_IP>:5173` in your browser.

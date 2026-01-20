@@ -12,7 +12,9 @@ Architecture:
 import asyncio
 import json
 import os
+import sys
 import uuid
+import warnings
 from abc import ABC, abstractmethod
 from datetime import datetime
 from pathlib import Path
@@ -25,6 +27,34 @@ from .models import (
     AssistantMessageEvent, ToolResultEvent
 )
 from .cost_tracker import CostTracker
+
+
+# Global flag to track if we're in graceful shutdown mode
+_graceful_shutdown_in_progress = False
+
+
+def _sdk_exception_handler(loop, context):
+    """Custom exception handler for asyncio to suppress SDK cleanup errors during shutdown."""
+    global _graceful_shutdown_in_progress
+
+    exception = context.get('exception')
+    message = context.get('message', '')
+
+    # During graceful shutdown, suppress known SDK cleanup errors
+    if _graceful_shutdown_in_progress:
+        error_str = str(exception) if exception else message
+
+        # Suppress anyio cancel scope errors (SDK cleanup issue)
+        if 'cancel scope' in error_str.lower():
+            return  # Silently suppress
+
+        # Suppress generator cleanup errors
+        if isinstance(exception, (GeneratorExit, RuntimeError)):
+            if 'cancel scope' in error_str or 'generator' in error_str.lower():
+                return  # Silently suppress
+
+    # For other errors, use the default handler
+    loop.default_exception_handler(context)
 
 
 def safe_print(text: str, **kwargs) -> None:
@@ -56,6 +86,7 @@ class SessionResult(BaseModel):
     error_category: Optional[ErrorCategory] = None
     feature_completed: bool = False
     handoff_requested: bool = False
+    interrupted: bool = False  # True if session was interrupted by stop request
     summary: Optional[str] = None
     files_changed: list[str] = []
     # Token usage and cost tracking
@@ -220,18 +251,25 @@ class BaseSession(ABC):
     async def run(
         self,
         prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
+        on_message: Optional[Callable[[Any], None]] = None,
+        stop_check: Optional[Callable[[], bool]] = None
     ) -> SessionResult:
         """Run an agent session with the given prompt.
 
         Applies session timeout if configured, then delegates to
         the subclass-specific _run_session implementation.
+
+        Args:
+            prompt: The prompt to send to the agent
+            on_message: Optional callback for streaming messages
+            stop_check: Optional callback that returns True if stop was requested.
+                       When stop is detected, the session will gracefully interrupt.
         """
         timeout = self.config.session_timeout_seconds
         self._started_at = datetime.now()
 
         try:
-            coro = self._run_session(prompt, on_message)
+            coro = self._run_session(prompt, on_message, stop_check)
 
             # Apply timeout if configured
             if timeout > 0:
@@ -266,9 +304,16 @@ class BaseSession(ABC):
     async def _run_session(
         self,
         prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
+        on_message: Optional[Callable[[Any], None]] = None,
+        stop_check: Optional[Callable[[], bool]] = None
     ) -> SessionResult:
-        """Execute the session - implemented by subclasses."""
+        """Execute the session - implemented by subclasses.
+
+        Args:
+            prompt: The prompt to send to the agent
+            on_message: Optional callback for streaming messages
+            stop_check: Optional callback that returns True if stop was requested
+        """
         pass
 
 
@@ -286,18 +331,30 @@ class SDKSession(BaseSession):
     async def _run_session(
         self,
         prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
+        on_message: Optional[Callable[[Any], None]] = None,
+        stop_check: Optional[Callable[[], bool]] = None
     ) -> SessionResult:
         """Run session using Claude Agent SDK."""
         print("[SDK] Entering _run_session...", flush=True)
+
+        # Set up custom exception handler to suppress SDK cleanup errors during shutdown
+        loop = asyncio.get_event_loop()
+        original_handler = loop.get_exception_handler()
+        loop.set_exception_handler(_sdk_exception_handler)
+
         try:
             print("[SDK] Importing claude_agent_sdk...", flush=True)
             from claude_agent_sdk import query, ClaudeAgentOptions
             print("[SDK] Import successful", flush=True)
         except ImportError as e:
             print(f"[SDK] Import failed: {e}, falling back to mock", flush=True)
+            # Restore original handler before returning
+            if original_handler:
+                loop.set_exception_handler(original_handler)
+            else:
+                loop.set_exception_handler(None)
             # Fall back to mock if SDK not installed
-            return await self._run_mock_session(prompt, on_message)
+            return await self._run_mock_session(prompt, on_message, stop_check)
 
         result = SessionResult(
             session_id=self.session_id,
@@ -310,6 +367,8 @@ class SDKSession(BaseSession):
         all_messages = []
         total_input_tokens = 0
         total_output_tokens = 0
+        total_cache_read_tokens = 0
+        total_cache_write_tokens = 0
 
         print(f"\n[SDK] Starting session with model: {self.config.model}", flush=True)
         print(f"[SDK] NOTE: SDK uses API credits, not your Claude subscription", flush=True)
@@ -327,6 +386,9 @@ class SDKSession(BaseSession):
                 permission_mode="acceptEdits",
                 cwd=str(self.project_path)
             )
+
+            # Track if we break early for proper cleanup messaging
+            interrupted_early = False
 
             async for message in query(prompt=prompt, options=options):
                 message_count += 1
@@ -425,16 +487,31 @@ class SDKSession(BaseSession):
                     usage = message.usage
                     input_tokens = usage.get('input_tokens', 0)
                     output_tokens = usage.get('output_tokens', 0)
+                    cache_read_tokens = usage.get('cache_read_input_tokens', 0)
+                    cache_write_tokens = usage.get('cache_creation_input_tokens', 0)
                     total_input_tokens += input_tokens
                     total_output_tokens += output_tokens
+                    total_cache_read_tokens += cache_read_tokens
+                    total_cache_write_tokens += cache_write_tokens
                     total_tokens = total_input_tokens + total_output_tokens
                     self.context_usage_percent = (total_tokens / 200000) * 100
                     result.context_usage_percent = self.context_usage_percent
-                    print(f"  Tokens: {input_tokens} in / {output_tokens} out ({self.context_usage_percent:.1f}% context)")
+                    cache_info = f" (cache: {cache_read_tokens}r/{cache_write_tokens}w)" if cache_read_tokens or cache_write_tokens else ""
+                    print(f"  Tokens: {input_tokens} in / {output_tokens} out{cache_info} ({self.context_usage_percent:.1f}% context)")
 
                 if self.context_usage_percent >= self.config.context_threshold_percent:
                     result.handoff_requested = True
                     print(f"  [!] Context threshold reached - handoff requested")
+
+                # Check for stop request (mid-session interruption)
+                if stop_check and stop_check():
+                    global _graceful_shutdown_in_progress
+                    _graceful_shutdown_in_progress = True
+                    print(f"\n[SDK] Stop requested - interrupting session gracefully")
+                    result.interrupted = True
+                    result.summary = f"Session interrupted by stop request after {message_count} messages"
+                    interrupted_early = True
+                    break
 
                 if on_message:
                     on_message(message)
@@ -463,15 +540,19 @@ class SDKSession(BaseSession):
             if total_input_tokens or total_output_tokens:
                 cost = self._cost_tracker.calculate_cost(
                     input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens
+                    output_tokens=total_output_tokens,
+                    cache_read_tokens=total_cache_read_tokens
                 )
                 result.usage_stats = UsageStats(
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
+                    cache_read_tokens=total_cache_read_tokens,
+                    cache_write_tokens=total_cache_write_tokens,
                     model=self.config.model,
                     cost_usd=cost
                 )
-                print(f"[SDK] Total usage: {total_input_tokens} in / {total_output_tokens} out (${cost:.4f})")
+                cache_info = f" (cache: {total_cache_read_tokens}r/{total_cache_write_tokens}w)" if total_cache_read_tokens or total_cache_write_tokens else ""
+                print(f"[SDK] Total usage: {total_input_tokens} in / {total_output_tokens} out{cache_info} (${cost:.4f})")
 
             print(f"\n{'='*60}")
             print(f"[SDK] Session completed - processed {message_count} messages")
@@ -480,6 +561,20 @@ class SDKSession(BaseSession):
             if message_count > 0 and not result.error_message:
                 result.success = True
 
+        except GeneratorExit:
+            # This happens when we break out of the async for loop
+            # The generator cleanup is expected, not an error
+            if interrupted_early:
+                print(f"[SDK] Generator cleanup after early exit (expected)")
+            pass
+        except RuntimeError as e:
+            # The SDK's anyio-based cleanup can throw this when breaking out of the loop
+            # "Attempted to exit cancel scope in a different task than it was entered in"
+            if "cancel scope" in str(e) and interrupted_early:
+                print(f"[SDK] Async cleanup error suppressed (expected during interruption)")
+            else:
+                # Re-raise if it's not the expected cleanup error
+                raise
         except Exception as e:
             error_str = str(e)
             result.raw_error = error_str
@@ -525,17 +620,37 @@ class SDKSession(BaseSession):
             import traceback
             print("\n[SDK] Full traceback:")
             traceback.print_exc()
+        finally:
+            # Restore the original exception handler
+            global _graceful_shutdown_in_progress
+            _graceful_shutdown_in_progress = False
+            if original_handler:
+                loop.set_exception_handler(original_handler)
+            else:
+                loop.set_exception_handler(None)
 
         return result
 
     async def _run_mock_session(
         self,
         prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
+        on_message: Optional[Callable[[Any], None]] = None,
+        stop_check: Optional[Callable[[], bool]] = None
     ) -> SessionResult:
         """Mock session for development without the SDK installed."""
         print(f"\n[MOCK SESSION] Would run agent with prompt:\n{prompt[:500]}...")
         await asyncio.sleep(1)
+
+        # Check for stop request
+        if stop_check and stop_check():
+            return SessionResult(
+                session_id=self.session_id,
+                success=False,
+                context_usage_percent=45.0,
+                summary="[MOCK] Session interrupted by stop request",
+                interrupted=True,
+                files_changed=[]
+            )
 
         return SessionResult(
             session_id=self.session_id,
@@ -556,11 +671,23 @@ class MockSession(BaseSession):
     async def _run_session(
         self,
         prompt: str,
-        on_message: Optional[Callable[[Any], None]] = None
+        on_message: Optional[Callable[[Any], None]] = None,
+        stop_check: Optional[Callable[[], bool]] = None
     ) -> SessionResult:
         """Run a mock session that simulates success."""
         print(f"\n[MOCK SESSION] Simulating session with prompt ({len(prompt)} chars)")
         await asyncio.sleep(0.5)
+
+        # Check for stop request
+        if stop_check and stop_check():
+            return SessionResult(
+                session_id=self.session_id,
+                success=False,
+                context_usage_percent=25.0,
+                summary="[MOCK] Session interrupted by stop request",
+                interrupted=True,
+                files_changed=[]
+            )
 
         return SessionResult(
             session_id=self.session_id,

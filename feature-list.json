@@ -408,60 +408,6 @@
       "model_override": null
     },
     {
-      "id": "O3-dashboard-backend",
-      "name": "Dashboard Backend",
-      "description": "FastAPI server exposing ADA state via REST API. Endpoints: /status, /backlog, /sessions, /progress, /config. WebSocket for live updates.",
-      "category": "functional",
-      "status": "completed",
-      "priority": 100,
-      "acceptance_criteria": [
-        "FastAPI server running",
-        "/status endpoint",
-        "/backlog endpoint",
-        "/sessions endpoint",
-        "/progress endpoint",
-        "/config endpoint",
-        "WebSocket for live updates"
-      ],
-      "depends_on": [],
-      "started_at": "2026-01-18T00:00:00",
-      "completed_at": "2026-01-18T12:00:00",
-      "sessions_spent": 1,
-      "implementation_notes": [
-        "Phase 2: Observability - Critical priority",
-        "Implemented in api/ directory"
-      ],
-      "quality_gates": null,
-      "model_override": null
-    },
-    {
-      "id": "O4-dashboard-ui",
-      "name": "Dashboard UI",
-      "description": "Real-time view: current feature, session progress, backlog status, recent activity. Vite + React + TypeScript with shadcn/ui.",
-      "category": "functional",
-      "status": "completed",
-      "priority": 100,
-      "acceptance_criteria": [
-        "React 18 + TypeScript + Vite setup",
-        "shadcn/ui components",
-        "Current feature display",
-        "Session progress view",
-        "Backlog status table",
-        "Recent activity feed",
-        "Dark/light theme support"
-      ],
-      "depends_on": ["O3-dashboard-backend"],
-      "started_at": "2026-01-18T00:00:00",
-      "completed_at": "2026-01-18T12:00:00",
-      "sessions_spent": 1,
-      "implementation_notes": [
-        "Phase 2: Observability - Critical priority",
-        "Implemented in ada-dashboard/ directory"
-      ],
-      "quality_gates": null,
-      "model_override": null
-    },
-    {
       "id": "O5-session-history",
       "name": "Session History",
       "description": "Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome, feature worked on.",
@@ -482,52 +428,6 @@
       "sessions_spent": 1,
       "implementation_notes": [
         "Phase 2: Observability - High priority"
-      ],
-      "quality_gates": null,
-      "model_override": null
-    },
-    {
-      "id": "O6-live-log-streaming",
-      "name": "Live Log Streaming",
-      "description": "WebSocket stream of progress file updates. Real-time console output in dashboard.",
-      "category": "functional",
-      "status": "completed",
-      "priority": 90,
-      "acceptance_criteria": [
-        "WebSocket connection established",
-        "Progress file changes streamed",
-        "Real-time display in dashboard",
-        "Auto-scroll to latest"
-      ],
-      "depends_on": ["O3-dashboard-backend", "O4-dashboard-ui"],
-      "started_at": "2026-01-18T00:00:00",
-      "completed_at": "2026-01-18T12:00:00",
-      "sessions_spent": 1,
-      "implementation_notes": [
-        "Phase 2: Observability - High priority"
-      ],
-      "quality_gates": null,
-      "model_override": null
-    },
-    {
-      "id": "O7-feature-timeline",
-      "name": "Feature Timeline",
-      "description": "Visual timeline/Gantt showing feature progression across sessions. Time spent per feature.",
-      "category": "functional",
-      "status": "completed",
-      "priority": 80,
-      "acceptance_criteria": [
-        "Gantt-style timeline view",
-        "Feature progression visualization",
-        "Time spent per feature displayed",
-        "Session markers on timeline"
-      ],
-      "depends_on": ["O4-dashboard-ui", "O5-session-history"],
-      "started_at": "2026-01-18T00:00:00",
-      "completed_at": "2026-01-18T12:00:00",
-      "sessions_spent": 1,
-      "implementation_notes": [
-        "Phase 2: Observability - Medium priority"
       ],
       "quality_gates": null,
       "model_override": null
@@ -568,7 +468,7 @@
         "Failure notifications",
         "Billing warning notifications"
       ],
-      "depends_on": ["O4-dashboard-ui"],
+      "depends_on": [],
       "started_at": "2026-01-18T00:00:00",
       "completed_at": "2026-01-18T12:00:00",
       "sessions_spent": 1,
@@ -630,7 +530,7 @@
       "description": "Screenshot comparison using Playwright. Store baseline screenshots, compare after implementation. Flag visual changes for review.",
       "category": "testing",
       "status": "pending",
-      "priority": 90,
+      "priority": 30,
       "acceptance_criteria": [
         "Baseline screenshots stored",
         "Screenshots taken after implementation",
@@ -788,17 +688,17 @@
     {
       "id": "S2-multi-project",
       "name": "Multi-Project Management",
-      "description": "Manage multiple projects from single harness. Project switching, aggregate dashboard.",
+      "description": "Manage multiple projects from single harness. Project switching, aggregate views.",
       "category": "functional",
       "status": "pending",
       "priority": 30,
       "acceptance_criteria": [
         "Multiple project configs supported",
         "Project switching in CLI",
-        "Aggregate dashboard view",
+        "Aggregate CLI views",
         "Per-project cost tracking"
       ],
-      "depends_on": ["O4-dashboard-ui"],
+      "depends_on": [],
       "started_at": null,
       "completed_at": null,
       "sessions_spent": 0,
@@ -1039,5 +939,5 @@
     }
   ],
   "created_at": "2026-01-18T13:00:00",
-  "last_updated": "2026-01-20T13:30:00"
+  "last_updated": "2026-01-20T18:00:00"
 }

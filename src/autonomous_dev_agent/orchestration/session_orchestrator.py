@@ -10,7 +10,7 @@ Handles:
 import asyncio
 import random
 from pathlib import Path
-from typing import Optional, Any, Callable, TYPE_CHECKING
+from typing import Optional, Any, Callable, TYPE_CHECKING, Union
 
 from rich.console import Console
 from rich.panel import Panel
@@ -27,9 +27,6 @@ from ..alert_manager import AlertManager, create_handoff_alert
 from ..session_history import SessionHistory
 from ..workspace import WorkspaceManager
 from ..session_logger import SessionLogger
-from ..api.websocket import (
-    emit_agent_message, emit_tool_call, emit_tool_result, emit_context_update
-)
 
 if TYPE_CHECKING:
     from ..session import SessionManager, BaseSession, SessionResult
@@ -67,6 +64,7 @@ class SessionOrchestrator:
         model_selector: ModelSelector,
         alert_manager: AlertManager,
         session_history: SessionHistory,
+        stop_check: Optional[Callable[[], bool]] = None,
     ):
         """Initialize the session orchestrator.
 
@@ -80,6 +78,7 @@ class SessionOrchestrator:
             model_selector: Model selector for dynamic selection
             alert_manager: Alert manager for notifications
             session_history: Session history for recording
+            stop_check: Optional callback that returns True if stop was requested
         """
         self.config = config
         self.project_path = Path(project_path)
@@ -90,6 +89,7 @@ class SessionOrchestrator:
         self.model_selector = model_selector
         self.alert_manager = alert_manager
         self.session_history = session_history
+        self.stop_check = stop_check
 
         # Handlers (set via setters for circular dependency handling)
         self._completion_handler: Optional["FeatureCompletionHandler"] = None
@@ -98,8 +98,7 @@ class SessionOrchestrator:
         # Session logger for current session
         self._current_session_logger: Optional[SessionLogger] = None
 
-        # Live monitoring state
-        self._current_session_id: Optional[str] = None
+        # Turn count for logging
         self._turn_count: int = 0
 
     def set_completion_handler(self, handler: "FeatureCompletionHandler") -> None:
@@ -239,8 +238,8 @@ class SessionOrchestrator:
         if attempt >= retry_config.max_retries:
             return False
 
-        # Don't retry successful sessions or handoffs
-        if result.success or result.handoff_requested:
+        # Don't retry successful sessions, handoffs, or interrupted sessions
+        if result.success or result.handoff_requested or result.interrupted:
             return False
 
         # Check if the error category is retryable
@@ -281,33 +280,6 @@ class SessionOrchestrator:
                     thinking=message.thinking
                 )
 
-            # Emit to WebSocket for live monitoring
-            if self._current_session_id:
-                tool_call_names = []
-                if message.tool_calls:
-                    for tc in message.tool_calls:
-                        tool_name = tc.get('name', 'unknown') if isinstance(tc, dict) else getattr(tc, 'name', 'unknown')
-                        tool_call_names.append(tool_name)
-
-                        # Also emit individual tool.call events
-                        call_id = tc.get('id', '') if isinstance(tc, dict) else getattr(tc, 'id', '')
-                        params = tc.get('input', {}) if isinstance(tc, dict) else getattr(tc, 'input', {})
-
-                        asyncio.create_task(emit_tool_call(
-                            session_id=self._current_session_id,
-                            call_id=call_id,
-                            tool_name=tool_name,
-                            parameters=params if isinstance(params, dict) else {}
-                        ))
-
-                asyncio.create_task(emit_agent_message(
-                    session_id=self._current_session_id,
-                    content=(message.content or "")[:500],
-                    summary=self._summarize_content(message.content),
-                    tool_calls=tool_call_names,
-                    turn=self._turn_count
-                ))
-
         elif isinstance(message, ToolResultEvent):
             if self._current_session_logger:
                 self._current_session_logger.log_tool_result(
@@ -318,21 +290,6 @@ class SessionOrchestrator:
                     duration_ms=message.duration_ms,
                     file_changed=message.file_changed
                 )
-
-            # Emit to WebSocket for live monitoring
-            if self._current_session_id:
-                # Determine success based on output content
-                output_str = str(message.output) if message.output else ""
-                is_error = "error" in output_str.lower() or "exception" in output_str.lower()
-
-                asyncio.create_task(emit_tool_result(
-                    session_id=self._current_session_id,
-                    call_id=message.tool_call_id or "",
-                    tool_name=message.tool or "unknown",
-                    success=not is_error,
-                    result=output_str[:500] if output_str else "",
-                    duration_ms=message.duration_ms
-                ))
 
         # Legacy: print text for display (SDK returns these in addition to events)
         elif hasattr(message, 'text'):
@@ -393,23 +350,24 @@ class SessionOrchestrator:
             }
         )
 
-        # Set live monitoring state
-        self._current_session_id = session.session_id
         self._turn_count = 0
-
-        result = await session.run(prompt, on_message=self._on_message)
+        result = await session.run(prompt, on_message=self._on_message, stop_check=self.stop_check)
 
         # Log session end
-        outcome = "success" if result.success else "failure"
+        if result.interrupted:
+            outcome = "interrupted"
+        elif result.success:
+            outcome = "success"
+        else:
+            outcome = "failure"
+
         self._current_session_logger.log_session_end(
             outcome=outcome,
-            reason="Initialization complete" if result.success else result.error_message
+            reason="Initialization complete" if result.success else (
+                "Interrupted by stop request" if result.interrupted else result.error_message
+            )
         )
         self._current_session_logger = None
-
-        # Clear live monitoring state
-        self._current_session_id = None
-        self._turn_count = 0
 
         if result.success:
             self.progress.append_entry(ProgressEntry(
@@ -503,19 +461,22 @@ class SessionOrchestrator:
         if self._recovery_manager:
             self._recovery_manager.save_session_state(session, feature)
 
-        # Set live monitoring state
-        self._current_session_id = session.session_id
         self._turn_count = 0
 
-        # Run the agent
-        result = await session.run(prompt, on_message=self._on_message)
+        # Run the agent with stop check for mid-session interruption
+        result = await session.run(prompt, on_message=self._on_message, stop_check=self.stop_check)
 
         # Handle result
         session_outcome = "success"
         session_reason = None
         commit_hash = None
 
-        if result.handoff_requested:
+        if result.interrupted:
+            # Session was interrupted by stop request - handle like handoff
+            session_outcome = "interrupted"
+            session_reason = "Session interrupted by stop request"
+            await self._perform_interruption(session, feature, result, backlog)
+        elif result.handoff_requested:
             session_outcome = "handoff"
             session_reason = f"Context threshold reached at {result.context_usage_percent:.1f}%"
             await self._perform_handoff(session, feature, result, backlog)
@@ -561,17 +522,6 @@ class SessionOrchestrator:
                     cost_usd=result.usage_stats.cost_usd
                 )
 
-                # Also emit to WebSocket for live monitoring
-                if self._current_session_id:
-                    asyncio.create_task(emit_context_update(
-                        session_id=self._current_session_id,
-                        input_tokens=result.usage_stats.input_tokens,
-                        output_tokens=result.usage_stats.output_tokens,
-                        total_tokens=result.usage_stats.input_tokens + result.usage_stats.output_tokens,
-                        context_percent=result.context_usage_percent,
-                        cost_usd=result.usage_stats.cost_usd
-                    ))
-
             # Log any errors
             if result.error_message and result.error_category:
                 self._current_session_logger.log_error(
@@ -587,10 +537,6 @@ class SessionOrchestrator:
                 commit_hash=commit_hash
             )
             self._current_session_logger = None
-
-        # Clear live monitoring state
-        self._current_session_id = None
-        self._turn_count = 0
 
         # Restore original model setting
         self.config.model = original_model
@@ -667,6 +613,77 @@ class SessionOrchestrator:
             self._completion_handler.record_session(
                 session, feature, result,
                 outcome=SessionOutcome.HANDOFF,
+                commit_hash=commit_hash,
+                files_changed=git_status.modified_files + git_status.staged_files
+            )
+
+    async def _perform_interruption(
+        self,
+        session: "BaseSession",
+        feature: Feature,
+        result: "SessionResult",
+        backlog: Backlog,
+    ) -> None:
+        """Handle session interruption from stop request.
+
+        Similar to handoff but triggered by user stop request.
+        Commits work in progress and saves state for recovery.
+
+        Args:
+            session: Current session
+            feature: Feature being worked on
+            result: Session result
+            backlog: The feature backlog
+        """
+        console.print("\n[yellow]Session interrupted by stop request - saving progress...[/yellow]")
+
+        # Get git status
+        git_status = self.git.get_status()
+
+        # Auto-commit if configured and there are changes
+        commit_hash = None
+        if self.config.auto_commit and git_status.has_changes:
+            self.git.stage_all()
+            commit_hash = self.git.commit(
+                f"wip: {feature.name} - interrupted by stop request\n\n"
+                f"Auto-committed by autonomous-dev-agent during graceful shutdown.\n"
+                f"Session: {session.session_id}"
+            )
+            if commit_hash:
+                console.print(f"[green]Committed work in progress:[/green] {commit_hash[:8]}")
+
+        # Log the interruption
+        self.progress.append_entry(ProgressEntry(
+            session_id=session.session_id,
+            feature_id=feature.id,
+            action="interrupted",
+            summary=result.summary or "Session interrupted by stop request",
+            files_changed=git_status.modified_files + git_status.staged_files,
+            commit_hash=commit_hash
+        ))
+
+        # Add note to feature
+        backlog.add_implementation_note(
+            feature.id,
+            f"Session {session.session_id}: Interrupted by stop request"
+        )
+
+        # Update session state with interruption notes for recovery
+        if self._recovery_manager:
+            self._recovery_manager.save_session_state(
+                session,
+                feature,
+                context_percent=result.context_usage_percent,
+                handoff_notes=f"Resume implementing {feature.name} (interrupted)"
+            )
+
+        console.print(f"[green]OK[/green] Interruption handled. Commit: {commit_hash or 'no changes'}")
+
+        # Record session to history (treat as handoff for tracking)
+        if self._completion_handler:
+            self._completion_handler.record_session(
+                session, feature, result,
+                outcome=SessionOutcome.HANDOFF,  # Use HANDOFF since it's similar
                 commit_hash=commit_hash,
                 files_changed=git_status.modified_files + git_status.staged_files
             )

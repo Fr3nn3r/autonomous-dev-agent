@@ -149,6 +149,7 @@ class AutonomousHarness:
             model_selector=self.model_selector,
             alert_manager=self.alert_manager,
             session_history=self.session_history,
+            stop_check=self._recovery_manager.is_shutdown_requested,
         )
 
         # Wire up circular dependencies between orchestration components
@@ -415,9 +416,11 @@ class AutonomousHarness:
                         console.print("[red]Checkpoint failed after max fix attempts. Stopping.[/red]")
                         break
 
-            # Check for shutdown after session
-            if self._recovery_manager.is_shutdown_requested():
-                await self._recovery_manager.graceful_shutdown()
+            # Check for shutdown after session (or if session was interrupted)
+            if result.interrupted or self._recovery_manager.is_shutdown_requested():
+                # Session was interrupted mid-execution or stop requested after
+                # The orchestrator already handled committing work, just exit cleanly
+                console.print("[yellow]Graceful shutdown complete.[/yellow]")
                 return
 
             if not result.success and not result.handoff_requested:

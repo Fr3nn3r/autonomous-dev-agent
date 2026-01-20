@@ -51,20 +51,16 @@ def main():
 
 @main.command()
 @click.argument('project_path', type=click.Path(exists=True))
-@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model to use')
+@click.option('--model', default='claude-opus-4-5-20251101', help='Claude model to use')
 @click.option('--threshold', default=70.0, help='Context threshold percentage for handoff')
 @click.option('--max-sessions', type=int, help='Maximum sessions before stopping')
 @click.option('--backlog', default='feature-list.json', help='Backlog file name')
-@click.option('--with-dashboard', is_flag=True, help='Start embedded dashboard server for live monitoring')
-@click.option('--dashboard-port', default=8000, help='Port for embedded dashboard (default: 8000)')
 def run(
     project_path: str,
     model: str,
     threshold: float,
     max_sessions: Optional[int],
     backlog: str,
-    with_dashboard: bool,
-    dashboard_port: int
 ):
     """Run the autonomous agent on a project.
 
@@ -72,10 +68,6 @@ def run(
 
     Uses the Claude Agent SDK with API credits for billing. Provides real-time
     streaming output and detailed observability.
-
-    Use --with-dashboard to start an embedded API server for live monitoring.
-    Connect the dashboard frontend to http://localhost:<port> to see real-time
-    agent activity, tool calls, and token usage.
     """
     config = HarnessConfig(
         model=model,
@@ -87,55 +79,10 @@ def run(
     console.print(f"[bold]Mode:[/bold] SDK (API credits)")
     console.print(f"[bold]Model:[/bold] {model}")
 
-    if with_dashboard:
-        console.print(f"[bold]Dashboard:[/bold] http://0.0.0.0:{dashboard_port}")
-        console.print(f"[dim]WebSocket: ws://0.0.0.0:{dashboard_port}/ws/events[/dim]")
-
     harness = AutonomousHarness(project_path, config)
 
-    async def run_with_dashboard():
-        """Run harness with embedded dashboard server."""
-        from .api.main import create_app
-        from .api.websocket import start_file_watcher
-        import uvicorn
-
-        # Create FastAPI app
-        app = create_app(Path(project_path))
-
-        # Configure uvicorn server
-        uvi_config = uvicorn.Config(
-            app,
-            host="0.0.0.0",
-            port=dashboard_port,
-            log_level="warning",  # Reduce noise
-        )
-        server = uvicorn.Server(uvi_config)
-
-        # Start file watcher for file-based events
-        await start_file_watcher(Path(project_path))
-
-        async def run_server():
-            """Run uvicorn server until cancelled."""
-            try:
-                await server.serve()
-            except asyncio.CancelledError:
-                pass
-
-        async def run_harness_and_stop():
-            """Run harness, then signal server to stop."""
-            try:
-                await harness.run()
-            finally:
-                server.should_exit = True
-
-        # Run both concurrently - server runs until harness completes
-        await asyncio.gather(run_server(), run_harness_and_stop())
-
     try:
-        if with_dashboard:
-            asyncio.run(run_with_dashboard())
-        else:
-            asyncio.run(harness.run())
+        asyncio.run(harness.run())
     except KeyboardInterrupt:
         console.print("\n[yellow]Interrupted by user[/yellow]")
     except Exception as e:
@@ -148,7 +95,7 @@ def run(
 @click.option('--name', prompt='Project name', help='Name of the project')
 @click.option('--description', default='', help='Project description (prompted if not provided)')
 @click.option('--spec', type=click.Path(exists=True), help='Specification file to generate features from')
-@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model for spec generation')
+@click.option('--model', default='claude-opus-4-5-20251101', help='Claude model for spec generation')
 @click.option('--max-features', default=50, help='Maximum features to generate from spec')
 @click.option('--min-features', default=20, help='Minimum features to generate from spec')
 def init(
@@ -282,7 +229,7 @@ def init(
 @click.option('--project-name', '-n', help='Project name (default: derived from spec)')
 @click.option('--max-features', default=50, help='Maximum features to generate')
 @click.option('--min-features', default=20, help='Minimum features to generate')
-@click.option('--model', default='claude-opus-4-20250514', help='Claude model to use')
+@click.option('--model', default='claude-opus-4-5-20251101', help='Claude model to use')
 @click.option('--output', '-o', default='feature-list.json', help='Output filename')
 @click.option('--merge', is_flag=True, help='Merge with existing backlog')
 @click.option('--dry-run', is_flag=True, help='Preview without saving')
@@ -783,7 +730,7 @@ def stop(project_path: str, reason: str, cancel: bool, show_status: bool):
 @click.option('--fix', is_flag=True, help='Generate backlog and optionally start fixing')
 @click.option('--dry-run', is_flag=True, help='Preview without saving changes')
 @click.option('--incremental', is_flag=True, help='Only show new issues since last run')
-@click.option('--model', default='claude-sonnet-4-20250514', help='Claude model for AI review')
+@click.option('--model', default='claude-opus-4-5-20251101', help='Claude model for AI review')
 @click.option('--output', default='feature-list.json', help='Output backlog filename')
 def discover(
     project_path: str,
@@ -977,41 +924,6 @@ def _display_violations(violations: list) -> None:
     for v in violations:
         console.print(f"  [{v.severity.value}] {v.title}")
         console.print(f"    [dim]{v.recommendation}[/dim]")
-
-
-@main.command()
-@click.argument('project_path', type=click.Path(exists=True))
-@click.option('--host', default='127.0.0.1', help='Host to bind to')
-@click.option('--port', default=8000, help='Port to listen on')
-@click.option('--reload', is_flag=True, help='Enable auto-reload for development')
-def dashboard(project_path: str, host: str, port: int, reload: bool):
-    """Start the dashboard server for real-time monitoring.
-
-    Starts a FastAPI server that provides:
-    - REST API at http://host:port/api/
-    - WebSocket at ws://host:port/ws/events
-    - API docs at http://host:port/docs
-
-    The dashboard reads project state files and provides real-time
-    updates via WebSocket when files change.
-
-    Example:
-        ada dashboard ./my-project --port 8000
-    """
-    from .api import run_dashboard
-
-    path = Path(project_path)
-    console.print(f"[bold]Starting ADA Dashboard[/bold]")
-    console.print(f"Project: {path}")
-    console.print(f"API: http://{host}:{port}/api/")
-    console.print(f"Docs: http://{host}:{port}/docs")
-    console.print(f"WebSocket: ws://{host}:{port}/ws/events")
-    console.print(f"\nPress Ctrl+C to stop\n")
-
-    try:
-        run_dashboard(path, host=host, port=port, reload=reload)
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Dashboard stopped[/yellow]")
 
 
 @main.command()
