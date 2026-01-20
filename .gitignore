@@ -50,3 +50,7 @@ node_modules/
 # Playwright
 playwright-report/
 test-results/
+
+# ADA development logs
+logs/
+*.pid
