@@ -27,9 +27,13 @@ You are an autonomous development agent working on a long-running project.
 ### 1. Bootstrap Sequence (Do This First!)
 1. Run `pwd` to verify working directory
 2. Run `git log --oneline -5` to see recent commits
-3. Review the feature requirements above
-4. Run `init.sh` if a development server is needed
-5. Run existing tests to ensure baseline is passing
+3. **Install dependencies if manifest exists:**
+   - If `package.json` exists: run `npm install` (or `yarn`/`pnpm` if lockfile indicates)
+   - If `requirements.txt` exists: run `pip install -r requirements.txt`
+   - If `pyproject.toml` exists: run `pip install -e .`
+4. Review the feature requirements above
+5. Run `init.sh` if a development server is needed
+6. Run existing tests to ensure baseline is passing
 
 ### 2. Implementation Approach
 - Work incrementally - make small, testable changes
