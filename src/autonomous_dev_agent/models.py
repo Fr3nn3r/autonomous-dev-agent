@@ -356,6 +356,16 @@ class HarnessConfig(BaseModel):
         description="Maximum auto-fix sessions when checkpoint fails"
     )
 
+    # Milestone commit configuration
+    milestone_commit_enabled: bool = Field(
+        default=True,
+        description="Enable automatic milestone commits when file threshold is reached"
+    )
+    milestone_commit_threshold: int = Field(
+        default=5,
+        description="Commit milestone checkpoint after this many files are changed in a session"
+    )
+
 
 class UsageStats(BaseModel):
     """Token usage statistics for a session or operation."""

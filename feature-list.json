@@ -942,7 +942,7 @@
       "name": "npm PATH Injection for Subprocesses",
       "description": "Inject project's node_modules/.bin into PATH for all subprocess calls (tests, builds, lints). Prevents 'vitest is not recognized' and similar failures when tools are installed locally but not globally.",
       "category": "reliability",
-      "status": "pending",
+      "status": "completed",
       "priority": 98,
       "acceptance_criteria": [
         "subprocess.run() calls in verification.py inject node_modules/.bin into PATH",
@@ -952,14 +952,16 @@
         "Test with local vitest installation confirms fix"
       ],
       "depends_on": [],
-      "started_at": null,
-      "completed_at": null,
-      "sessions_spent": 0,
+      "started_at": "2026-01-21T12:00:00",
+      "completed_at": "2026-01-21T12:30:00",
+      "sessions_spent": 1,
       "implementation_notes": [
         "From RETROSPECTIVE-2026-01-20.md P0 issue",
         "Caused $18+ waste in test run (search-functionality retries)",
-        "Location: verification.py lines 514-560",
-        "Simple fix: env['PATH'] = str(node_bin) + os.pathsep + env.get('PATH', '')"
+        "Added _get_subprocess_env() helper method in verification.py:494-508",
+        "Modified _run_command() to use injected PATH at line 537",
+        "Uses os.pathsep for cross-platform compatibility (;/Windows, :/Unix)",
+        "Tests added: test_subprocess_env_includes_node_modules_bin, test_run_command_uses_injected_path"
       ],
       "quality_gates": {
         "require_tests": true,
@@ -976,7 +978,7 @@
       "name": "Windows Heap Corruption Crash Detection",
       "description": "Detect Windows exit code 3221225786 (0xC0000374 STATUS_HEAP_CORRUPTION) as SDK_CRASH category. Currently detected as UNKNOWN, leading to suboptimal retry strategy.",
       "category": "reliability",
-      "status": "pending",
+      "status": "completed",
       "priority": 97,
       "acceptance_criteria": [
         "Exit code 3221225786 detected in error classification",
@@ -986,14 +988,15 @@
         "Proper retry with exponential backoff applied"
       ],
       "depends_on": ["R4-error-classification"],
-      "started_at": null,
-      "completed_at": null,
-      "sessions_spent": 0,
+      "started_at": "2026-01-21T12:00:00",
+      "completed_at": "2026-01-21T12:30:00",
+      "sessions_spent": 1,
       "implementation_notes": [
         "From RETROSPECTIVE-2026-01-20.md P0 issue",
-        "Caused work loss in task-statistics session",
-        "Location: session.py lines 151-157 (classify_error function)",
-        "Add patterns: 'exit code 3221225786', '0xc0000374', 'heap corruption'"
+        "Caused work loss in task-statistics session (SDK crash mid-feature)",
+        "Extended SDK_CRASH patterns in session.py:151-163 (classify_error function)",
+        "Added patterns: exit code 3221225786, 0xc0000374 (hex), 'heap corruption'",
+        "Test added: test_classify_heap_corruption_error"
       ],
       "quality_gates": {
         "require_tests": true,
@@ -1010,7 +1013,7 @@
       "name": "Mid-Session Milestone Commits",
       "description": "Auto-commit after significant file changes during long sessions, not just at feature completion. Prevents total work loss when SDK crashes mid-feature after 40+ turns of productive work.",
       "category": "reliability",
-      "status": "pending",
+      "status": "completed",
       "priority": 96,
       "acceptance_criteria": [
         "Track file creations/modifications during session",
@@ -1021,14 +1024,17 @@
         "Does not interfere with feature completion commits"
       ],
       "depends_on": ["R7-graceful-shutdown"],
-      "started_at": null,
-      "completed_at": null,
-      "sessions_spent": 0,
+      "started_at": "2026-01-21T12:30:00",
+      "completed_at": "2026-01-21T13:30:00",
+      "sessions_spent": 1,
       "implementation_notes": [
         "From RETROSPECTIVE-2026-01-20.md P0 issue",
         "Session 022 lost 42 turns of work due to crash with no checkpoint",
-        "Location: orchestration/feature_completion.py",
-        "Need to track git status changes during session execution"
+        "Implemented files_changed tracking in session.py via ToolResultEvent aggregation",
+        "Added milestone_commit_enabled and milestone_commit_threshold to HarnessConfig",
+        "Added _maybe_commit_milestone() method in session_orchestrator.py",
+        "Commits use format: 'wip: {feature.name} - checkpoint after {N} files'",
+        "Tests: TestMilestoneCommits (5 tests), TestSessionResultFilesChanged (2 tests)"
       ],
       "quality_gates": {
         "require_tests": true,

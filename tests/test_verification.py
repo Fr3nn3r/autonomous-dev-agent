@@ -266,6 +266,44 @@ class TestFeatureVerifier:
         test_result = next((r for r in report.results if r.name == "Unit Tests"), None)
         assert "timeout" in test_result.message.lower() or "Timed out" in test_result.message
 
+    def test_subprocess_env_includes_node_modules_bin(self, temp_project, sample_feature):
+        """Test that node_modules/.bin is injected into PATH for subprocesses."""
+        config = VerificationConfig(test_command=None)
+        verifier = FeatureVerifier(temp_project, config)
+
+        # Without node_modules/.bin, PATH should be unchanged
+        env_without = verifier._get_subprocess_env()
+        original_path = os.environ.get("PATH", "")
+        assert env_without["PATH"] == original_path
+
+        # Create node_modules/.bin directory
+        node_bin = temp_project / "node_modules" / ".bin"
+        node_bin.mkdir(parents=True)
+
+        # Now PATH should include node_modules/.bin at the front
+        env_with = verifier._get_subprocess_env()
+        assert env_with["PATH"].startswith(str(node_bin))
+        assert original_path in env_with["PATH"]
+
+    @patch('subprocess.run')
+    def test_run_command_uses_injected_path(self, mock_run, temp_project, sample_feature):
+        """Test that _run_command uses the injected PATH."""
+        mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+
+        # Create node_modules/.bin directory
+        node_bin = temp_project / "node_modules" / ".bin"
+        node_bin.mkdir(parents=True)
+
+        config = VerificationConfig(test_command="vitest run")
+        verifier = FeatureVerifier(temp_project, config)
+
+        verifier.verify(sample_feature, interactive=False)
+
+        # Check that subprocess.run was called with node_modules/.bin in PATH
+        call_args = mock_run.call_args
+        env_used = call_args.kwargs.get('env', {})
+        assert str(node_bin) in env_used.get("PATH", "")
+
 
 class TestPreCompleteHook:
     """Tests for pre-complete hook execution (V2)."""

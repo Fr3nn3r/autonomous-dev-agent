@@ -25,6 +25,7 @@ from autonomous_dev_agent.orchestration import (
     SessionOrchestrator,
 )
 from autonomous_dev_agent.protocols import GitOperations, ProgressLog
+from autonomous_dev_agent.alert_manager import AlertManager
 
 
 # =============================================================================
@@ -704,3 +705,296 @@ class TestOrchestrationIntegration:
         assert harness._orchestrator.progress == harness.progress
         assert harness._completion_handler.progress == harness.progress
         assert harness._recovery_manager.progress == harness.progress
+
+
+class TestMilestoneCommits:
+    """Tests for RE3: Mid-Session Milestone Commits."""
+
+    @pytest.fixture
+    def sample_feature(self):
+        """Create a sample feature for testing."""
+        return Feature(
+            id="test-feature",
+            name="Test Feature",
+            description="A test feature",
+            category=FeatureCategory.FUNCTIONAL,
+            status=FeatureStatus.IN_PROGRESS,
+        )
+
+    @pytest.fixture
+    def orchestrator_with_mocks(self, tmp_path):
+        """Create an orchestrator with mock dependencies."""
+        config = HarnessConfig(
+            auto_commit=True,
+            milestone_commit_enabled=True,
+            milestone_commit_threshold=5,
+        )
+        git = MockGitOperations(has_changes=True)
+        progress = MockProgressLog()
+
+        # Create minimal workspace structure
+        ada_dir = tmp_path / ".ada"
+        ada_dir.mkdir()
+        (ada_dir / "prompts").mkdir()
+        (ada_dir / "prompts" / "coding.md").write_text("Test prompt {feature_name}")
+        (ada_dir / "logs").mkdir()
+        (ada_dir / "logs" / "sessions").mkdir()
+        (ada_dir / "state").mkdir()
+
+        workspace = Mock()
+        workspace.get_next_session_id = Mock(return_value="session-001")
+        model_selector = Mock()
+        session_history = Mock()
+
+        orchestrator = SessionOrchestrator(
+            config=config,
+            project_path=tmp_path,
+            git=git,
+            progress=progress,
+            session_manager=Mock(spec=SessionManager),
+            workspace=workspace,
+            model_selector=model_selector,
+            alert_manager=Mock(spec=AlertManager),
+            session_history=session_history,
+        )
+
+        return orchestrator, git, progress
+
+    def test_milestone_commit_triggered_when_threshold_reached(
+        self, orchestrator_with_mocks, sample_feature
+    ):
+        """Milestone commit should trigger when files_changed >= threshold."""
+        orchestrator, git, progress = orchestrator_with_mocks
+
+        # Create result with 5 files changed (equals threshold)
+        result = SessionResult(
+            session_id="test-session",
+            success=True,
+            context_usage_percent=50.0,
+            files_changed=["file1.py", "file2.py", "file3.py", "file4.py", "file5.py"]
+        )
+
+        mock_session = Mock()
+        mock_session.session_id = "test-session"
+
+        commit_hash = orchestrator._maybe_commit_milestone(mock_session, sample_feature, result)
+
+        # Should have committed
+        assert commit_hash is not None
+        assert git.commit_called is True
+        assert git.staged_called is True
+        assert "checkpoint after 5 files" in git.last_commit_message
+        assert sample_feature.name in git.last_commit_message
+
+        # Should have logged to progress
+        assert len(progress.entries) == 1
+        assert progress.entries[0].action == "milestone_commit"
+        assert progress.entries[0].commit_hash == commit_hash
+
+    def test_milestone_commit_not_triggered_below_threshold(
+        self, orchestrator_with_mocks, sample_feature
+    ):
+        """No milestone commit when files_changed < threshold."""
+        orchestrator, git, progress = orchestrator_with_mocks
+
+        # Create result with 3 files changed (below threshold of 5)
+        result = SessionResult(
+            session_id="test-session",
+            success=True,
+            context_usage_percent=50.0,
+            files_changed=["file1.py", "file2.py", "file3.py"]
+        )
+
+        mock_session = Mock()
+        mock_session.session_id = "test-session"
+
+        commit_hash = orchestrator._maybe_commit_milestone(mock_session, sample_feature, result)
+
+        # Should NOT have committed
+        assert commit_hash is None
+        assert git.commit_called is False
+        assert len(progress.entries) == 0
+
+    def test_milestone_commit_disabled_when_config_false(
+        self, tmp_path, sample_feature
+    ):
+        """No milestone commit when milestone_commit_enabled=False."""
+        config = HarnessConfig(
+            auto_commit=True,
+            milestone_commit_enabled=False,  # Disabled
+            milestone_commit_threshold=5,
+        )
+        git = MockGitOperations(has_changes=True)
+        progress = MockProgressLog()
+
+        # Create minimal workspace structure
+        ada_dir = tmp_path / ".ada"
+        ada_dir.mkdir()
+        (ada_dir / "prompts").mkdir()
+        (ada_dir / "logs").mkdir()
+        (ada_dir / "logs" / "sessions").mkdir()
+        (ada_dir / "state").mkdir()
+
+        workspace = Mock()
+        workspace.get_next_session_id = Mock(return_value="session-001")
+        model_selector = Mock()
+        session_history = Mock()
+
+        orchestrator = SessionOrchestrator(
+            config=config,
+            project_path=tmp_path,
+            git=git,
+            progress=progress,
+            session_manager=Mock(spec=SessionManager),
+            workspace=workspace,
+            model_selector=model_selector,
+            alert_manager=Mock(spec=AlertManager),
+            session_history=session_history,
+        )
+
+        result = SessionResult(
+            session_id="test-session",
+            success=True,
+            context_usage_percent=50.0,
+            files_changed=["f1.py", "f2.py", "f3.py", "f4.py", "f5.py", "f6.py"]  # 6 files
+        )
+
+        mock_session = Mock()
+        mock_session.session_id = "test-session"
+
+        commit_hash = orchestrator._maybe_commit_milestone(mock_session, sample_feature, result)
+
+        # Should NOT have committed (disabled)
+        assert commit_hash is None
+        assert git.commit_called is False
+
+    def test_milestone_commit_respects_auto_commit_setting(
+        self, tmp_path, sample_feature
+    ):
+        """No milestone commit when auto_commit=False."""
+        config = HarnessConfig(
+            auto_commit=False,  # Disabled
+            milestone_commit_enabled=True,
+            milestone_commit_threshold=5,
+        )
+        git = MockGitOperations(has_changes=True)
+        progress = MockProgressLog()
+
+        # Create minimal workspace structure
+        ada_dir = tmp_path / ".ada"
+        ada_dir.mkdir()
+        (ada_dir / "prompts").mkdir()
+        (ada_dir / "logs").mkdir()
+        (ada_dir / "logs" / "sessions").mkdir()
+        (ada_dir / "state").mkdir()
+
+        workspace = Mock()
+        workspace.get_next_session_id = Mock(return_value="session-001")
+        model_selector = Mock()
+        session_history = Mock()
+
+        orchestrator = SessionOrchestrator(
+            config=config,
+            project_path=tmp_path,
+            git=git,
+            progress=progress,
+            session_manager=Mock(spec=SessionManager),
+            workspace=workspace,
+            model_selector=model_selector,
+            alert_manager=Mock(spec=AlertManager),
+            session_history=session_history,
+        )
+
+        result = SessionResult(
+            session_id="test-session",
+            success=True,
+            context_usage_percent=50.0,
+            files_changed=["f1.py", "f2.py", "f3.py", "f4.py", "f5.py"]
+        )
+
+        mock_session = Mock()
+        mock_session.session_id = "test-session"
+
+        commit_hash = orchestrator._maybe_commit_milestone(mock_session, sample_feature, result)
+
+        # Should NOT have committed (auto_commit disabled)
+        assert commit_hash is None
+        assert git.commit_called is False
+
+    def test_milestone_commit_skips_when_no_git_changes(
+        self, tmp_path, sample_feature
+    ):
+        """No milestone commit when git reports no actual changes."""
+        config = HarnessConfig(
+            auto_commit=True,
+            milestone_commit_enabled=True,
+            milestone_commit_threshold=5,
+        )
+        git = MockGitOperations(has_changes=False)  # No git changes
+        progress = MockProgressLog()
+
+        # Create minimal workspace structure
+        ada_dir = tmp_path / ".ada"
+        ada_dir.mkdir()
+        (ada_dir / "prompts").mkdir()
+        (ada_dir / "logs").mkdir()
+        (ada_dir / "logs" / "sessions").mkdir()
+        (ada_dir / "state").mkdir()
+
+        workspace = Mock()
+        workspace.get_next_session_id = Mock(return_value="session-001")
+        model_selector = Mock()
+        session_history = Mock()
+
+        orchestrator = SessionOrchestrator(
+            config=config,
+            project_path=tmp_path,
+            git=git,
+            progress=progress,
+            session_manager=Mock(spec=SessionManager),
+            workspace=workspace,
+            model_selector=model_selector,
+            alert_manager=Mock(spec=AlertManager),
+            session_history=session_history,
+        )
+
+        result = SessionResult(
+            session_id="test-session",
+            success=True,
+            context_usage_percent=50.0,
+            files_changed=["f1.py", "f2.py", "f3.py", "f4.py", "f5.py"]
+        )
+
+        mock_session = Mock()
+        mock_session.session_id = "test-session"
+
+        commit_hash = orchestrator._maybe_commit_milestone(mock_session, sample_feature, result)
+
+        # Should NOT have committed (no git changes)
+        assert commit_hash is None
+        assert git.commit_called is False
+
+
+class TestSessionResultFilesChanged:
+    """Tests for files_changed tracking in SessionResult."""
+
+    def test_session_result_files_changed_default_empty(self):
+        """SessionResult should have empty files_changed by default."""
+        result = SessionResult(
+            session_id="test",
+            success=True,
+            context_usage_percent=0.0
+        )
+        assert result.files_changed == []
+
+    def test_session_result_files_changed_populated(self):
+        """SessionResult should accept files_changed list."""
+        files = ["file1.py", "file2.py", "file3.py"]
+        result = SessionResult(
+            session_id="test",
+            success=True,
+            context_usage_percent=50.0,
+            files_changed=files
+        )
+        assert result.files_changed == files
+        assert len(result.files_changed) == 3

@@ -148,11 +148,17 @@ def classify_error(error_text: str) -> ErrorCategory:
     ]):
         return ErrorCategory.RATE_LIMIT
 
-    # SDK crash / Windows exit code 1 - retry
+    # SDK crash / Windows exit codes - retry
     if any(phrase in error_lower for phrase in [
         "exit code 1",
         "exit code: 1",
-        "exited with code 1"
+        "exited with code 1",
+        # Windows heap corruption (0xC0000374 = 3221225786)
+        "exit code 3221225786",
+        "exit code: 3221225786",
+        "exited with code 3221225786",
+        "0xc0000374",
+        "heap corruption",
     ]):
         return ErrorCategory.SDK_CRASH
 
@@ -366,6 +372,7 @@ class SDKSession(BaseSession):
         message_count = 0
         received_result_message = False
         all_messages = []
+        files_changed_set: set[str] = set()  # Track unique files modified
         total_input_tokens = 0
         total_output_tokens = 0
         total_cache_read_tokens = 0
@@ -452,16 +459,20 @@ class SDKSession(BaseSession):
                         result_str = str(tool_result)[:200]
                         safe_print(f"  Result: {result_str}...")
 
+                        # Determine file changed if it's a file-modifying tool
+                        file_changed = None
+                        if tool_name in ('Write', 'Edit', 'NotebookEdit'):
+                            file_changed = (
+                                (tool_input or {}).get('file_path') or
+                                (tool_input or {}).get('path')
+                            )
+                            # Track for milestone commits
+                            if file_changed:
+                                files_changed_set.add(file_changed)
+
                         # Emit ToolResultEvent
                         if on_message:
                             tool_call_id = data.get('tool_call_id') or data.get('id') or f"tc_{message_count}"
-                            # Determine file changed if it's a file-modifying tool
-                            file_changed = None
-                            if tool_name in ('Write', 'Edit', 'NotebookEdit'):
-                                file_changed = (
-                                    (tool_input or {}).get('file_path') or
-                                    (tool_input or {}).get('path')
-                                )
                             event = ToolResultEvent(
                                 tool_call_id=tool_call_id,
                                 tool=tool_name or "unknown",
@@ -536,6 +547,7 @@ class SDKSession(BaseSession):
                     print(f"\n[SDK] Final message received")
 
             result.raw_output = "\n".join(all_messages)
+            result.files_changed = list(files_changed_set)
 
             if total_input_tokens or total_output_tokens:
                 result.usage_stats = UsageStats(

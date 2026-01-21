@@ -491,6 +491,22 @@ class FeatureVerifier:
         console.print("")
         return Confirm.ask("Approve this feature as complete?", default=False)
 
+    def _get_subprocess_env(self, env: Optional[dict] = None) -> dict:
+        """Get environment dict with node_modules/.bin in PATH.
+
+        This prevents 'vitest is not recognized' and similar failures
+        when npm tools are installed locally but not globally.
+        """
+        result_env = (env or os.environ).copy()
+
+        # Inject node_modules/.bin into PATH if it exists
+        node_bin = self.project_path / "node_modules" / ".bin"
+        if node_bin.exists():
+            current_path = result_env.get("PATH", "")
+            result_env["PATH"] = str(node_bin) + os.pathsep + current_path
+
+        return result_env
+
     def _run_command(
         self,
         name: str,
@@ -518,7 +534,7 @@ class FeatureVerifier:
                 capture_output=True,
                 text=True,
                 timeout=timeout,
-                env=env or os.environ
+                env=self._get_subprocess_env(env)
             )
 
             duration = time.time() - start_time

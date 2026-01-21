@@ -466,10 +466,13 @@ class SessionOrchestrator:
         # Run the agent with stop check for mid-session interruption
         result = await session.run(prompt, on_message=self._on_message, stop_check=self.stop_check)
 
+        # Check for milestone commit (prevents work loss on crash)
+        milestone_commit_hash = self._maybe_commit_milestone(session, feature, result)
+
         # Handle result
         session_outcome = "success"
         session_reason = None
-        commit_hash = None
+        commit_hash = milestone_commit_hash  # Start with milestone commit if any
 
         if result.interrupted:
             # Session was interrupted by stop request - handle like handoff
@@ -686,6 +689,66 @@ class SessionOrchestrator:
                 commit_hash=commit_hash,
                 files_changed=git_status.modified_files + git_status.staged_files
             )
+
+    def _maybe_commit_milestone(
+        self,
+        session: "BaseSession",
+        feature: Feature,
+        result: "SessionResult",
+    ) -> Optional[str]:
+        """Commit milestone checkpoint if file change threshold is reached.
+
+        This prevents work loss when SDK crashes mid-feature after many file changes.
+
+        Args:
+            session: Current session
+            feature: Feature being worked on
+            result: Session result with files_changed populated
+
+        Returns:
+            Commit hash if milestone was committed, None otherwise
+        """
+        # Check if milestone commits are enabled and threshold is met
+        if not self.config.milestone_commit_enabled:
+            return None
+
+        if not self.config.auto_commit:
+            return None
+
+        files_changed_count = len(result.files_changed)
+        if files_changed_count < self.config.milestone_commit_threshold:
+            return None
+
+        # Check if there are actual git changes to commit
+        git_status = self.git.get_status()
+        if not git_status.has_changes:
+            return None
+
+        # Commit milestone
+        self.git.stage_all()
+        commit_hash = self.git.commit(
+            f"wip: {feature.name} - checkpoint after {files_changed_count} files\n\n"
+            f"Auto-committed by autonomous-dev-agent (milestone checkpoint).\n"
+            f"Session: {session.session_id}\n"
+            f"Files modified: {files_changed_count}"
+        )
+
+        # Log to progress
+        self.progress.append_entry(ProgressEntry(
+            session_id=session.session_id,
+            feature_id=feature.id,
+            action="milestone_commit",
+            summary=f"Milestone checkpoint: {files_changed_count} files changed",
+            files_changed=result.files_changed,
+            commit_hash=commit_hash
+        ))
+
+        console.print(
+            f"[cyan]MILESTONE[/cyan] Committed checkpoint: {files_changed_count} files "
+            f"({commit_hash[:8]})"
+        )
+
+        return commit_hash
 
     async def run_coding_session_with_retry(
         self,

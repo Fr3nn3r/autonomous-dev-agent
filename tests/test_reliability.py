@@ -49,6 +49,18 @@ class TestErrorClassification:
         assert classify_error("exit code: 1") == ErrorCategory.SDK_CRASH
         assert classify_error("process exited with code 1") == ErrorCategory.SDK_CRASH
 
+    def test_classify_heap_corruption_error(self):
+        """Windows heap corruption (0xC0000374) should be classified as SDK_CRASH."""
+        # Decimal form
+        assert classify_error("exit code 3221225786") == ErrorCategory.SDK_CRASH
+        assert classify_error("exit code: 3221225786") == ErrorCategory.SDK_CRASH
+        assert classify_error("process exited with code 3221225786") == ErrorCategory.SDK_CRASH
+        # Hex form (case insensitive)
+        assert classify_error("0xC0000374") == ErrorCategory.SDK_CRASH
+        assert classify_error("0xc0000374") == ErrorCategory.SDK_CRASH
+        # Text form
+        assert classify_error("heap corruption detected") == ErrorCategory.SDK_CRASH
+
     def test_classify_transient_error(self):
         """Network/timeout errors should be classified as TRANSIENT."""
         assert classify_error("connection timeout") == ErrorCategory.TRANSIENT
