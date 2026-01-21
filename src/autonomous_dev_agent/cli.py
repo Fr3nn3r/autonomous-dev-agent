@@ -28,7 +28,7 @@ from .generation import SpecParser, FeatureGenerator, GenerationError
 from .workspace import WorkspaceManager
 from .log_formatter import (
     format_session_list, format_session_detail, stream_session_pretty,
-    format_workspace_info, export_sessions_to_jsonl, format_duration, format_cost
+    format_workspace_info, export_sessions_to_jsonl, format_duration, format_tokens
 )
 
 console = Console()
@@ -928,25 +928,25 @@ def _display_violations(violations: list) -> None:
 
 @main.command()
 @click.argument('project_path', type=click.Path(exists=True))
-def costs(project_path: str):
-    """Show cost summary for the project.
+def tokens(project_path: str):
+    """Show token consumption summary for the project.
 
-    Displays total costs, token usage, and breakdowns by model and outcome.
+    Displays total token usage and breakdowns by model and outcome.
     """
     from .session_history import SessionHistory
-    from .cost_tracker import CostTracker
+    from .token_tracker import format_tokens as fmt_tokens
 
     path = Path(project_path)
     history = SessionHistory(path)
 
-    summary = history.get_cost_summary()
+    summary = history.get_token_summary()
 
     if summary.total_sessions == 0:
         console.print("[yellow]No sessions recorded yet.[/yellow]")
         return
 
     # Header
-    console.print(f"\n[bold]Cost Summary for {path.name}[/bold]\n")
+    console.print(f"\n[bold]Token Consumption for {path.name}[/bold]\n")
 
     # Totals table
     from rich.table import Table
@@ -955,26 +955,28 @@ def costs(project_path: str):
     totals_table.add_column("Metric", style="cyan")
     totals_table.add_column("Value", style="green")
 
-    totals_table.add_row("Total Cost", f"${summary.total_cost_usd:.4f}")
     totals_table.add_row("Total Sessions", str(summary.total_sessions))
-    totals_table.add_row("Input Tokens", CostTracker.format_tokens(summary.total_input_tokens))
-    totals_table.add_row("Output Tokens", CostTracker.format_tokens(summary.total_output_tokens))
+    totals_table.add_row("Total Tokens", fmt_tokens(summary.total_tokens))
+    totals_table.add_row("Input Tokens", fmt_tokens(summary.total_input_tokens))
+    totals_table.add_row("Output Tokens", fmt_tokens(summary.total_output_tokens))
     if summary.total_cache_read_tokens:
-        totals_table.add_row("Cache Read", CostTracker.format_tokens(summary.total_cache_read_tokens))
+        totals_table.add_row("Cache Read", fmt_tokens(summary.total_cache_read_tokens))
+    if summary.total_cache_write_tokens:
+        totals_table.add_row("Cache Write", fmt_tokens(summary.total_cache_write_tokens))
 
     console.print(totals_table)
 
-    # Cost by model
-    if summary.cost_by_model:
+    # Tokens by model
+    if summary.tokens_by_model:
         console.print("\n[bold]By Model[/bold]")
         model_table = Table()
         model_table.add_column("Model", style="cyan")
         model_table.add_column("Sessions", justify="right")
-        model_table.add_column("Cost", justify="right", style="green")
+        model_table.add_column("Tokens", justify="right", style="green")
 
-        for model, cost in sorted(summary.cost_by_model.items(), key=lambda x: -x[1]):
+        for model, tokens_count in sorted(summary.tokens_by_model.items(), key=lambda x: -x[1]):
             sessions = summary.sessions_by_model.get(model, 0)
-            model_table.add_row(model, str(sessions), f"${cost:.4f}")
+            model_table.add_row(model, str(sessions), fmt_tokens(tokens_count))
 
         console.print(model_table)
 
@@ -1214,7 +1216,7 @@ def migrate(project_path: str):
 def info(project_path: str):
     """Display project information and statistics.
 
-    Shows project metadata, session counts, costs, and log usage.
+    Shows project metadata, session counts, token usage, and log usage.
 
     Example:
         ada info ./my-project

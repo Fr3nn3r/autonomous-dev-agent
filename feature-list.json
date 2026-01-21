@@ -936,8 +936,312 @@
         "custom_validators": []
       },
       "model_override": null
+    },
+    {
+      "id": "RE1-npm-path-injection",
+      "name": "npm PATH Injection for Subprocesses",
+      "description": "Inject project's node_modules/.bin into PATH for all subprocess calls (tests, builds, lints). Prevents 'vitest is not recognized' and similar failures when tools are installed locally but not globally.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 98,
+      "acceptance_criteria": [
+        "subprocess.run() calls in verification.py inject node_modules/.bin into PATH",
+        "PATH injection only occurs when node_modules/.bin exists",
+        "Original PATH preserved and extended (not replaced)",
+        "Works on both Windows (;) and Unix (:) PATH separators",
+        "Test with local vitest installation confirms fix"
+      ],
+      "depends_on": [],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P0 issue",
+        "Caused $18+ waste in test run (search-functionality retries)",
+        "Location: verification.py lines 514-560",
+        "Simple fix: env['PATH'] = str(node_bin) + os.pathsep + env.get('PATH', '')"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE2-heap-corruption-detection",
+      "name": "Windows Heap Corruption Crash Detection",
+      "description": "Detect Windows exit code 3221225786 (0xC0000374 STATUS_HEAP_CORRUPTION) as SDK_CRASH category. Currently detected as UNKNOWN, leading to suboptimal retry strategy.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 97,
+      "acceptance_criteria": [
+        "Exit code 3221225786 detected in error classification",
+        "Hex variant 0xC0000374 also detected (case-insensitive)",
+        "Text 'heap corruption' detected",
+        "Classified as ErrorCategory.SDK_CRASH",
+        "Proper retry with exponential backoff applied"
+      ],
+      "depends_on": ["R4-error-classification"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P0 issue",
+        "Caused work loss in task-statistics session",
+        "Location: session.py lines 151-157 (classify_error function)",
+        "Add patterns: 'exit code 3221225786', '0xc0000374', 'heap corruption'"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE3-milestone-commits",
+      "name": "Mid-Session Milestone Commits",
+      "description": "Auto-commit after significant file changes during long sessions, not just at feature completion. Prevents total work loss when SDK crashes mid-feature after 40+ turns of productive work.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 96,
+      "acceptance_criteria": [
+        "Track file creations/modifications during session",
+        "Trigger WIP commit after 5+ new files created",
+        "Trigger WIP commit after 10+ files modified",
+        "Commit message format: 'wip(feature-id): checkpoint after N changes'",
+        "Configurable threshold via HarnessConfig",
+        "Does not interfere with feature completion commits"
+      ],
+      "depends_on": ["R7-graceful-shutdown"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P0 issue",
+        "Session 022 lost 42 turns of work due to crash with no checkpoint",
+        "Location: orchestration/feature_completion.py",
+        "Need to track git status changes during session execution"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE4-tooling-failure-category",
+      "name": "Tooling Failure Error Category",
+      "description": "Add TOOLING_FAILURE error category for PATH/environment issues. Distinguish between 'feature code is broken' vs 'tooling environment is broken'. Different retry strategy for each.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 88,
+      "acceptance_criteria": [
+        "ErrorCategory.TOOLING_FAILURE added to enum",
+        "Detect patterns: 'not recognized', 'command not found', 'ENOENT', 'spawn'",
+        "Detect patterns: 'No such file or directory' for executables",
+        "TOOLING_FAILURE is retryable (add to retryable_categories)",
+        "Different delay strategy than SDK_CRASH (shorter, as it's usually fixable)"
+      ],
+      "depends_on": ["R4-error-classification"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P1 issue",
+        "Enables RE5-tooling-retry-strategy to work properly",
+        "Location: models.py (enum), session.py (classification)"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE5-tooling-retry-strategy",
+      "name": "Smart Tooling Failure Retry",
+      "description": "On TOOLING_FAILURE: attempt environment fix (PATH injection, npm install, etc.) then retry the SAME session state - don't restart feature from scratch. Reduces wasted work on environment issues.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 86,
+      "acceptance_criteria": [
+        "On TOOLING_FAILURE, attempt auto-fix before retry",
+        "Auto-fix attempts: PATH injection, npm install, npx prefix",
+        "Retry from current session state, not feature start",
+        "Max 2 auto-fix attempts before marking as failure",
+        "Log fix attempts in implementation_notes"
+      ],
+      "depends_on": ["RE4-tooling-failure-category", "RE1-npm-path-injection"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P1 issue",
+        "Prevents wasting $15+ restarting features for simple env issues",
+        "Location: orchestration/session_orchestrator.py retry logic"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE6-in-session-heartbeat",
+      "name": "In-Session Heartbeat Monitoring",
+      "description": "Add periodic heartbeat check during agent execution. Detect hung SDK processes earlier than the 30-minute timeout. Log warning if no activity for 2 minutes, force timeout if 5 minutes.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 84,
+      "acceptance_criteria": [
+        "Track timestamp of last message/activity during session",
+        "Log warning if no activity for 2 minutes",
+        "Force session timeout if no activity for 5 minutes",
+        "Heartbeat interval configurable via HarnessConfig",
+        "Heartbeat runs in separate asyncio task",
+        "Clean cancellation when session completes normally"
+      ],
+      "depends_on": ["R8-session-timeout"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P1 issue",
+        "Session 004 hung for 4 HOURS undetected",
+        "Current timeout only fires at 30 min total, not for mid-session hangs",
+        "Location: session.py SDKSession._run_session()"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE7-turn-based-checkpoint",
+      "name": "Turn-Based Progress Checkpoints",
+      "description": "Save lightweight checkpoint every N turns during session (not full commit). Enables smarter resume - skip already-completed work instead of restarting from scratch.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 75,
+      "acceptance_criteria": [
+        "Checkpoint saved every 10 turns (configurable)",
+        "Checkpoint includes: turn number, last tool calls, files modified",
+        "Checkpoint stored in .ada/state/checkpoint.json",
+        "On resume, provide checkpoint context to agent",
+        "Agent can skip already-done work based on checkpoint"
+      ],
+      "depends_on": ["R3-session-resume", "RE3-milestone-commits"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P2 issue",
+        "Different from milestone commits - this is about context, not git",
+        "Helps agent understand what was already done on resume"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE8-npx-fallback",
+      "name": "Automatic npx Fallback for Commands",
+      "description": "If a direct command fails with 'not recognized' or 'command not found', automatically retry with npx prefix. Self-healing for common npm tooling issues.",
+      "category": "reliability",
+      "status": "pending",
+      "priority": 72,
+      "acceptance_criteria": [
+        "Detect command failure patterns in subprocess output",
+        "Automatically retry failed command with 'npx' prefix",
+        "Only apply to npm-related tools (vitest, playwright, eslint, etc.)",
+        "Log the fallback attempt",
+        "Max 1 npx retry per command"
+      ],
+      "depends_on": ["RE1-npm-path-injection"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P2 issue",
+        "Simple self-healing mechanism",
+        "Location: verification.py _run_command()"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
+    },
+    {
+      "id": "RE9-error-analytics",
+      "name": "Error Pattern Analytics",
+      "description": "Track error patterns across sessions for automatic threshold tuning. Identify recurring issues, calculate failure rates by category, suggest configuration improvements.",
+      "category": "observability",
+      "status": "pending",
+      "priority": 65,
+      "acceptance_criteria": [
+        "Store error events in .ada/analytics/errors.json",
+        "Track: error category, message pattern, feature, timestamp",
+        "Calculate failure rate by error category",
+        "Identify top 5 recurring error patterns",
+        "ada analytics command shows error insights",
+        "Suggest config changes based on patterns"
+      ],
+      "depends_on": ["R4-error-classification", "OW1-session-logger"],
+      "started_at": null,
+      "completed_at": null,
+      "sessions_spent": 0,
+      "implementation_notes": [
+        "From RETROSPECTIVE-2026-01-20.md P2 issue",
+        "Enables data-driven reliability improvements",
+        "Could suggest increasing timeouts if timeout errors are common"
+      ],
+      "quality_gates": {
+        "require_tests": true,
+        "max_file_lines": 400,
+        "security_checklist": [],
+        "lint_command": "ruff check src/",
+        "type_check_command": null,
+        "custom_validators": []
+      },
+      "model_override": null
     }
   ],
   "created_at": "2026-01-18T13:00:00",
-  "last_updated": "2026-01-20T18:00:00"
+  "last_updated": "2026-01-21T12:00:00"
 }

@@ -212,8 +212,7 @@ Each line is a JSON object with a `type` field:
   "input_tokens": 45000,
   "output_tokens": 12000,
   "total_tokens": 57000,
-  "context_percent": 68.5,
-  "cost_usd": 0.42
+  "context_percent": 68.5
 }
 ```
 
@@ -233,7 +232,6 @@ Each line is a JSON object with a `type` field:
     "cache_read": 8000,
     "cache_write": 2000
   },
-  "cost_usd": 0.58,
   "files_changed": [
     "src/auth/routes.py",
     "src/auth/models.py",
@@ -266,7 +264,6 @@ Fast lookup without scanning all log files.
       "outcome": "handoff",
       "turns": 15,
       "tokens_total": 67000,
-      "cost_usd": 0.58,
       "size_bytes": 125000
     }
   ]
@@ -350,10 +347,10 @@ ada init <path>
 ```bash
 # List recent sessions
 ada logs [path]
-  SESSION              FEATURE        OUTCOME   TURNS  COST    DURATION
-  20240115_003         user-auth      success   23     $0.72   15m
-  20240115_002         user-auth      handoff   15     $0.58   12m
-  20240115_001         initializer    success   8      $0.25   5m
+  SESSION              FEATURE        OUTCOME   TURNS  TOKENS   DURATION
+  20240115_003         user-auth      success   23     85.2K    15m
+  20240115_002         user-auth      handoff   15     67.0K    12m
+  20240115_001         initializer    success   8      25.0K    5m
 
 # View specific session
 ada logs --session 20240115_002
@@ -383,7 +380,7 @@ ada info <path>
 
   Sessions: 45 total
   Features: 12 (8 completed, 3 in progress, 1 pending)
-  Total Cost: $28.45
+  Total Tokens: 2.5M
   Total Time: 4h 32m
 
   Log Size: 52MB / 100MB limit
@@ -448,7 +445,6 @@ class SessionIndexEntry(BaseModel):
     outcome: Optional[str]
     turns: int = 0
     tokens_total: int = 0
-    cost_usd: float = 0.0
     size_bytes: int = 0
     archived: bool = False
     archive_file: Optional[str] = None
@@ -498,7 +494,7 @@ With full session logs, you can later build:
    - What prompts lead to loops or stuck states?
    - Common error categories by feature type
 
-2. **Cost Optimization**
+2. **Token Optimization**
    - Token usage patterns by agent type
    - Context growth rate analysis
    - Optimal handoff thresholds

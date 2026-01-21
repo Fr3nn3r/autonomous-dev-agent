@@ -337,20 +337,6 @@ def create_feature_blocked_alert(
     )
 
 
-def create_cost_threshold_alert(
-    manager: AlertManager,
-    current_cost: float,
-    threshold: float,
-) -> Alert:
-    """Create an alert for exceeding cost threshold."""
-    return manager.add_alert(
-        alert_type=AlertType.COST_THRESHOLD,
-        title="Cost Threshold Exceeded",
-        message=f"Total cost (${current_cost:.2f}) has exceeded ${threshold:.2f}",
-        severity=AlertSeverity.WARNING,
-    )
-
-
 def create_handoff_alert(
     manager: AlertManager,
     session_id: str,

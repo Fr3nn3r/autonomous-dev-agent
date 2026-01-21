@@ -445,7 +445,6 @@ class WorkspaceCleaner:
                 "started_at": None,
                 "turns": 0,
                 "total_tokens": 0,
-                "cost_usd": 0.0,
             }
 
             with open(log_path, "r", encoding="utf-8") as f:
@@ -469,9 +468,6 @@ class WorkspaceCleaner:
                             session_info["total_tokens"] = entry.get(
                                 "total_tokens", 0
                             )
-                            session_info["cost_usd"] = entry.get(
-                                "total_cost_usd", 0.0
-                            )
                     except json.JSONDecodeError:
                         continue
 
@@ -490,7 +486,6 @@ class WorkspaceCleaner:
                     "cache_read": 0,
                     "cache_write": 0
                 },
-                "cost_usd": session_info["cost_usd"],
                 "files_changed": [],
                 "commit_hash": None,
                 "handoff_notes": None
@@ -560,7 +555,6 @@ class WorkspaceCleaner:
                 "outcome": None,
                 "turns": 0,
                 "tokens_total": 0,
-                "cost_usd": 0.0,
             }
 
             with open(log_path, "r", encoding="utf-8") as f:
@@ -586,9 +580,6 @@ class WorkspaceCleaner:
                             session_info["tokens_total"] = entry.get(
                                 "total_tokens", 0
                             )
-                            session_info["cost_usd"] = entry.get(
-                                "total_cost_usd", 0.0
-                            )
                         elif entry_type == LogEntryType.SESSION_END.value:
                             session_info["outcome"] = entry.get("outcome")
                             if entry.get("timestamp"):
@@ -609,7 +600,6 @@ class WorkspaceCleaner:
                 outcome=session_info["outcome"],
                 turns=session_info["turns"],
                 tokens_total=session_info["tokens_total"],
-                cost_usd=session_info["cost_usd"],
                 size_bytes=log_path.stat().st_size
             )
 

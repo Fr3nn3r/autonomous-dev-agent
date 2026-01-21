@@ -358,13 +358,12 @@ class HarnessConfig(BaseModel):
 
 
 class UsageStats(BaseModel):
-    """Token usage and cost statistics for a session or operation."""
+    """Token usage statistics for a session or operation."""
     input_tokens: int = Field(default=0, description="Total input tokens consumed")
     output_tokens: int = Field(default=0, description="Total output tokens generated")
     cache_read_tokens: int = Field(default=0, description="Tokens read from cache")
     cache_write_tokens: int = Field(default=0, description="Tokens written to cache")
     model: str = Field(default="", description="Model used for this operation")
-    cost_usd: float = Field(default=0.0, description="Estimated cost in USD")
 
     def __add__(self, other: "UsageStats") -> "UsageStats":
         """Add two UsageStats together."""
@@ -374,7 +373,6 @@ class UsageStats(BaseModel):
             cache_read_tokens=self.cache_read_tokens + other.cache_read_tokens,
             cache_write_tokens=self.cache_write_tokens + other.cache_write_tokens,
             model=self.model or other.model,
-            cost_usd=self.cost_usd + other.cost_usd
         )
 
 
@@ -389,7 +387,7 @@ class SessionOutcome(str, Enum):
 class SessionRecord(BaseModel):
     """Record of a completed session for history tracking.
 
-    Stored in .ada_session_history.json for cost tracking and analytics.
+    Stored in .ada_session_history.json for token tracking and analytics.
     """
     session_id: str = Field(..., description="Unique session identifier")
     feature_id: Optional[str] = Field(default=None, description="Feature being worked on")
@@ -403,9 +401,8 @@ class SessionRecord(BaseModel):
     cache_read_tokens: int = Field(default=0, description="Cache read tokens")
     cache_write_tokens: int = Field(default=0, description="Cache write tokens")
 
-    # Cost tracking
+    # Model info
     model: str = Field(default="", description="Model used")
-    cost_usd: float = Field(default=0.0, description="Session cost in USD")
 
     # Work done
     files_changed: list[str] = Field(default_factory=list, description="Files modified")
@@ -430,7 +427,6 @@ class SessionRecord(BaseModel):
             cache_read_tokens=self.cache_read_tokens,
             cache_write_tokens=self.cache_write_tokens,
             model=self.model,
-            cost_usd=self.cost_usd
         )
 
 
@@ -812,7 +808,6 @@ class CheckpointState(BaseModel):
 
 class AlertType(str, Enum):
     """Type of alert notification."""
-    COST_THRESHOLD = "cost_threshold"
     SESSION_FAILED = "session_failed"
     FEATURE_BLOCKED = "feature_blocked"
     FEATURE_COMPLETED = "feature_completed"
@@ -924,7 +919,6 @@ class SessionIndexEntry(BaseModel):
     outcome: Optional[str] = Field(default=None, description="success, failure, handoff, timeout")
     turns: int = Field(default=0, description="Number of agentic turns")
     tokens_total: int = Field(default=0, description="Total tokens used")
-    cost_usd: float = Field(default=0.0, description="Session cost in USD")
     size_bytes: int = Field(default=0, description="Size of the log file")
     archived: bool = Field(default=False, description="Whether session is archived")
     archive_file: Optional[str] = Field(default=None, description="Archive file if archived")

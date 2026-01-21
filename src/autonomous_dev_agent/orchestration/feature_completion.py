@@ -25,7 +25,6 @@ from ..alert_manager import (
     AlertManager,
     create_session_failed_alert,
     create_feature_completed_alert,
-    create_cost_threshold_alert,
 )
 
 if TYPE_CHECKING:
@@ -100,10 +99,6 @@ class FeatureCompletionHandler:
         self.alert_manager = alert_manager
         self.session_history = session_history
         self._save_backlog = backlog_saver or (lambda: None)
-
-        # Cost tracking state
-        self._total_cost_usd = 0.0
-        self._cost_threshold_alerted = False
 
     def set_backlog_saver(self, saver: Callable[[], None]) -> None:
         """Set the callback for saving backlog changes.
@@ -492,7 +487,6 @@ class FeatureCompletionHandler:
             output_tokens=result.usage_stats.output_tokens,
             cache_read_tokens=result.usage_stats.cache_read_tokens,
             cache_write_tokens=result.usage_stats.cache_write_tokens,
-            cost_usd=result.usage_stats.cost_usd,
             files_changed=files_changed or result.files_changed,
             commit_hash=commit_hash,
             error_message=result.error_message,
@@ -504,9 +498,6 @@ class FeatureCompletionHandler:
         # Add to history
         self.session_history.add_record(record)
 
-        # Track cumulative cost
-        self._total_cost_usd += result.usage_stats.cost_usd
-
         # Create alerts based on outcome
         if outcome == SessionOutcome.FAILURE:
             create_session_failed_alert(
@@ -515,28 +506,3 @@ class FeatureCompletionHandler:
                 feature_id=feature.id if feature else None,
                 error_message=result.error_message or "Unknown error"
             )
-
-        # Check cost threshold (alert once when exceeding $10)
-        cost_threshold = 10.0  # Could be made configurable
-        if self._total_cost_usd >= cost_threshold and not self._cost_threshold_alerted:
-            self._cost_threshold_alerted = True
-            create_cost_threshold_alert(
-                self.alert_manager,
-                current_cost=self._total_cost_usd,
-                threshold=cost_threshold
-            )
-
-        # Display cost info
-        if result.usage_stats.cost_usd > 0:
-            console.print(
-                f"[dim]Session cost: ${result.usage_stats.cost_usd:.4f} "
-                f"(Total: ${self._total_cost_usd:.4f})[/dim]"
-            )
-
-    def get_total_cost(self) -> float:
-        """Get the total cost across all recorded sessions.
-
-        Returns:
-            Total cost in USD
-        """
-        return self._total_cost_usd

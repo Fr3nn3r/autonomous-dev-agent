@@ -519,7 +519,6 @@ class SessionOrchestrator:
                     output_tokens=result.usage_stats.output_tokens,
                     cache_read_tokens=result.usage_stats.cache_read_tokens,
                     cache_write_tokens=result.usage_stats.cache_write_tokens,
-                    cost_usd=result.usage_stats.cost_usd
                 )
 
             # Log any errors

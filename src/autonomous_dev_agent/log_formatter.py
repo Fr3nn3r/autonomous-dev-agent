@@ -54,23 +54,6 @@ def format_duration(seconds: float) -> str:
         return f"{hours}h {mins}m"
 
 
-def format_cost(cost_usd: float) -> str:
-    """Format cost in dollars.
-
-    Args:
-        cost_usd: Cost in USD
-
-    Returns:
-        Formatted cost string
-    """
-    if cost_usd < 0.01:
-        return f"${cost_usd:.4f}"
-    elif cost_usd < 1.0:
-        return f"${cost_usd:.3f}"
-    else:
-        return f"${cost_usd:.2f}"
-
-
 def format_tokens(tokens: int) -> str:
     """Format token count with k/M suffixes.
 

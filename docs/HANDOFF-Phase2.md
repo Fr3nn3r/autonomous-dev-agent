@@ -9,24 +9,23 @@
 
 ## Summary
 
-Phase 2 adds comprehensive observability to ADA with cost tracking, adaptive model selection, persistent session history, and a real-time dashboard. All critical and high-priority features (O1-O6) are complete.
+Phase 2 adds comprehensive observability to ADA with token tracking, adaptive model selection, persistent session history, and a real-time dashboard. All critical and high-priority features (O1-O6) are complete.
 
 ---
 
 ## What Was Implemented
 
-### O1: Cost Tracking (`src/autonomous_dev_agent/cost_tracker.py`)
+### O1: Token Tracking (`src/autonomous_dev_agent/token_tracker.py`)
 - Token tracking: input, output, cache_read, cache_write
-- Pricing table for all Claude models (Opus, Sonnet, Haiku)
 - CLI output parsing to extract usage from session transcripts
-- Cost calculation per session and cumulative
+- Cumulative token tracking per session
 
 **Key Classes:**
-- `CostTracker` - Main tracker with `calculate_cost()` and `parse_cli_output()`
-- `PRICING` dict - Per-million-token pricing for each model
+- `TokenTracker` - Main tracker with `track_usage()` and token accumulation
+- `TokenSummary` - Aggregated token statistics
 
 ### O2: Adaptive Model Selection (`src/autonomous_dev_agent/model_selector.py`)
-- Default: Sonnet (cost-effective)
+- Default: Sonnet (efficient for most tasks)
 - Escalate to Opus for: many dependencies, complexity keywords, refactor category
 - Downgrade to Haiku for: documentation, typo fixes, simple tasks
 - Per-feature `model_override` field honors explicit selections
@@ -48,7 +47,7 @@ FastAPI server with REST endpoints:
 | `GET /api/backlog/{id}` | Single feature details |
 | `GET /api/sessions` | Session history with pagination |
 | `GET /api/sessions/{id}` | Single session details |
-| `GET /api/sessions/costs` | Cost summary aggregation |
+| `GET /api/sessions/tokens` | Token usage summary aggregation |
 | `GET /api/progress` | Recent progress log entries |
 | `GET /api/progress/full` | Full progress log |
 | `WS /ws/events` | WebSocket for real-time updates |
@@ -57,20 +56,20 @@ FastAPI server with REST endpoints:
 React + Vite + TypeScript + Tailwind:
 - Status cards (running state, context usage, session count)
 - Backlog table with status badges
-- Cost breakdown by model
+- Token breakdown by model
 - Auto-refresh via React Query (5-second intervals)
 - WebSocket connection for real-time events
 
 ### O5: Session History (`src/autonomous_dev_agent/session_history.py`)
 - Persistent JSON storage (`.ada_session_history.json`)
-- Session records with: feature_id, outcome, tokens, cost, files_changed
+- Session records with: feature_id, outcome, tokens, files_changed
 - Queries: by feature, by outcome, by date range
-- Cost summary with breakdown by model and outcome
+- Token summary with breakdown by model and outcome
 
 ### O6: Live Log Streaming
 - WebSocket endpoint broadcasts events on file changes
 - FileWatcher monitors state files and progress log
-- Events: `session.started`, `session.completed`, `feature.completed`, `cost.update`
+- Events: `session.started`, `session.completed`, `feature.completed`, `tokens.update`
 
 ---
 
@@ -81,9 +80,9 @@ React + Vite + TypeScript + Tailwind:
 ada dashboard <project-path>
 # Opens FastAPI at http://localhost:8000, React at http://localhost:5173
 
-# View cost summary
-ada costs <project-path>
-ada costs <project-path> --days 7  # Last 7 days only
+# View token usage summary
+ada tokens <project-path>
+ada tokens <project-path> --days 7  # Last 7 days only
 ```
 
 ---
@@ -93,7 +92,7 @@ ada costs <project-path> --days 7  # Last 7 days only
 ### New Files
 ```
 src/autonomous_dev_agent/
-├── cost_tracker.py          # Cost calculations, pricing
+├── token_tracker.py         # Token tracking
 ├── session_history.py       # Persistent session records
 ├── model_selector.py        # Adaptive model selection
 └── api/
@@ -119,7 +118,7 @@ ada-dashboard/               # React dashboard
 └── tailwind.config.js
 
 tests/
-├── test_cost_tracker.py     # 23 tests
+├── test_token_tracker.py    # Token tracking tests
 ├── test_session_history.py  # 30 tests
 └── test_model_selector.py   # 26 tests
 ```
@@ -129,8 +128,8 @@ tests/
 src/autonomous_dev_agent/
 ├── models.py         # Added UsageStats, SessionRecord, SessionOutcome, model_override
 ├── session.py        # Added usage tracking to SessionResult
-├── harness.py        # Integrated cost tracker, model selector, session history
-└── cli.py            # Added 'dashboard' and 'costs' commands
+├── harness.py        # Integrated token tracker, model selector, session history
+└── cli.py            # Added 'dashboard' and 'tokens' commands
 
 pyproject.toml        # Version 0.4.0, added fastapi, uvicorn, websockets deps
 docs/ROADMAP.md       # Updated O1-O6 status to Done
@@ -142,7 +141,7 @@ docs/ROADMAP.md       # Updated O1-O6 status to Done
 
 All Phase 2 tests pass:
 ```bash
-pytest tests/test_cost_tracker.py -v       # 23 passed
+pytest tests/test_token_tracker.py -v      # Token tracking tests
 pytest tests/test_session_history.py -v    # 30 passed
 pytest tests/test_model_selector.py -v     # 26 passed
 ```
@@ -155,7 +154,7 @@ Full test suite: 185 passed (1 pre-existing unrelated failure in test_session.py
 
 1. **Dashboard UI is basic** - Uses raw Tailwind, no shadcn/ui components yet
 2. **O7 Feature Timeline not implemented** - Visual Gantt chart pending
-3. **O8 Cost Projections not implemented** - Historical averages pending
+3. **O8 Token Projections not implemented** - Historical averages pending
 4. **O9 Notifications not implemented** - Windows toast/email pending
 5. **WebSocket not connected to UI** - Dashboard uses polling (React Query), WebSocket ready but not wired
 
@@ -196,7 +195,7 @@ Add quality gates before marking features complete:
 ### Option C: Complete Remaining Phase 2
 Finish medium/low priority observability features:
 - O7: Feature Timeline (visual Gantt)
-- O8: Cost Projections
+- O8: Token Projections
 - O9: Alerts/Notifications
 
 ---
@@ -206,9 +205,9 @@ Finish medium/low priority observability features:
 ### Harness Integration
 The harness now:
 1. Selects model via `ModelSelector.select_model(feature)` before each session
-2. Tracks tokens via `CostTracker` parsing CLI output
+2. Tracks tokens via `TokenTracker` parsing CLI output
 3. Records sessions via `SessionHistory.add_session()` after completion
-4. Reports cumulative costs in the run summary
+4. Reports cumulative token usage in the run summary
 
 ### Dashboard Integration
 The dashboard reads:
@@ -224,7 +223,7 @@ No direct coupling between harness and dashboard processes.
 ## Commit Reference
 
 ```
-c61a574 feat: implement Phase 2 observability dashboard with cost tracking
+c61a574 feat: implement Phase 2 observability dashboard with token tracking
 ```
 
 40 files changed, 8034 insertions(+), 10 deletions(-)

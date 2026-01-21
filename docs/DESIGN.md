@@ -23,7 +23,7 @@ This project is based on Anthropic's published research on building effective lo
 3. **[Claude Agent SDK Documentation](https://platform.claude.com/docs/en/agent-sdk/overview)**
    - SDK API reference
    - Session management and resumption
-   - Cost/token tracking
+   - Token tracking
    - Hooks for lifecycle events
 
 ### Key Insights from Research
@@ -224,7 +224,7 @@ Based on the research, these enhancements could be valuable:
 3. **Browser automation**: Puppeteer MCP for end-to-end testing
 4. **Semantic search**: Vector retrieval for large codebases
 5. **Hooks**: Pre/post tool execution hooks for custom validation
-6. **Cost tracking**: Detailed token/cost reporting per session and feature
+6. **Token tracking**: Detailed token consumption reporting per session and feature
 
 ## References
 

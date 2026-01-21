@@ -320,24 +320,21 @@ class TestGetModelInfo:
         info = selector.get_model_info(MODELS["opus"])
 
         assert info["short_name"] == "opus"
-        assert "$15/M" in info["input"]
-        assert "$75/M" in info["output"]
+        assert info["description"] == "Most capable model"
 
     def test_get_sonnet_info(self, selector):
         """Test getting Sonnet model info."""
         info = selector.get_model_info(MODELS["sonnet"])
 
         assert info["short_name"] == "sonnet"
-        assert "$3/M" in info["input"]
-        assert "$15/M" in info["output"]
+        assert info["description"] == "Balanced capability model"
 
     def test_get_haiku_info(self, selector):
         """Test getting Haiku model info."""
         info = selector.get_model_info(MODELS["haiku"])
 
         assert info["short_name"] == "haiku"
-        assert "$1/M" in info["input"]
-        assert "$5/M" in info["output"]
+        assert info["description"] == "Fastest model"
 
     def test_get_unknown_model_info(self, selector):
         """Test getting unknown model info."""

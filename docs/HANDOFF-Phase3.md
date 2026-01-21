@@ -3,7 +3,7 @@
 **Date**: 2026-01-18
 **Version**: 0.5.0
 **Previous Phase**: Phase 2 (Observability Dashboard)
-**Next Phase**: Visual Regression (V3), Cost Projections (O8), Alerts (O9)
+**Next Phase**: Visual Regression (V3), Token Projections (O8), Alerts (O9)
 
 ---
 
@@ -255,7 +255,7 @@ All checks must pass for the feature to be completed.
 
 ### Option B: Remaining Phase 2 Features
 - O7: Feature Timeline (visual Gantt)
-- O8: Cost Projections
+- O8: Token Projections
 - O9: Alerts/Notifications
 
 ### Option C: Begin Phase 4 (Scalability)

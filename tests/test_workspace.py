@@ -106,7 +106,6 @@ class TestWorkspaceManager:
             outcome="success",
             turns=5,
             tokens_total=10000,
-            cost_usd=0.05,
             size_bytes=1024
         )
 
@@ -291,7 +290,6 @@ class TestWorkspaceManager:
                 ended_at=datetime.now(),
                 outcome="success" if i < 2 else "failure",
                 tokens_total=1000 * (i + 1),
-                cost_usd=0.01 * (i + 1),
                 size_bytes=100 * (i + 1)
             )
             workspace.update_session_index(entry)
@@ -301,7 +299,6 @@ class TestWorkspaceManager:
         assert stats["project_name"] == "Test"
         assert stats["project_description"] == "Test project"
         assert stats["total_sessions"] == 3
-        assert stats["total_cost_usd"] == 0.06  # 0.01 + 0.02 + 0.03
         assert stats["total_tokens"] == 6000  # 1000 + 2000 + 3000
         assert stats["outcomes"]["success"] == 2
         assert stats["outcomes"]["failure"] == 1

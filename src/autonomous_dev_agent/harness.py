@@ -30,7 +30,7 @@ from .models import (
 from .progress import ProgressTracker
 from .git_manager import GitManager
 from .session import SessionManager, BaseSession, SessionResult
-from .cost_tracker import CostTracker
+from .token_tracker import TokenTracker, format_tokens
 from .session_history import SessionHistory
 from .model_selector import ModelSelector
 from .alert_manager import AlertManager
@@ -219,7 +219,7 @@ class AutonomousHarness:
 
         # Supporting components (always created fresh)
         self.session_history = SessionHistory(self.project_path)
-        self.cost_tracker = CostTracker(self.config.model)
+        self.token_tracker = TokenTracker(self.config.model)
         self.model_selector = ModelSelector(default_model=self.config.model)
         self.alert_manager = AlertManager(self.project_path, enable_desktop_notifications=True)
 
@@ -577,12 +577,12 @@ class AutonomousHarness:
 
         # Summary
         completed = sum(1 for f in self.backlog.features if f.status == FeatureStatus.COMPLETED)
-        cost_summary = self.session_history.get_cost_summary()
+        token_summary = self.session_history.get_token_summary()
         console.print(Panel(
             f"[bold]Sessions run:[/bold] {self.total_sessions}\n"
             f"[bold]Features completed:[/bold] {completed}/{len(self.backlog.features)}\n"
-            f"[bold]Total tokens:[/bold] {CostTracker.format_tokens(cost_summary.total_input_tokens)} in / "
-            f"{CostTracker.format_tokens(cost_summary.total_output_tokens)} out",
+            f"[bold]Total tokens:[/bold] {format_tokens(token_summary.total_input_tokens)} in / "
+            f"{format_tokens(token_summary.total_output_tokens)} out",
             title="Summary"
         ))
 

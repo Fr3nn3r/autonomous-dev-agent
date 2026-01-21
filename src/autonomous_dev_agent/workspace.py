@@ -514,7 +514,6 @@ class WorkspaceManager:
         project = self.get_project_context()
 
         # Calculate totals from index
-        total_cost = sum(s.cost_usd for s in index.sessions)
         total_tokens = sum(s.tokens_total for s in index.sessions)
         total_duration = 0
         for s in index.sessions:
@@ -533,7 +532,6 @@ class WorkspaceManager:
             "created_at": project.created_at.isoformat() if project else None,
             "init_session": project.init_session if project else None,
             "total_sessions": index.total_sessions,
-            "total_cost_usd": total_cost,
             "total_tokens": total_tokens,
             "total_duration_seconds": total_duration,
             "log_size_bytes": self.get_logs_size_bytes(),

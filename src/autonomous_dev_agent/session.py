@@ -26,7 +26,7 @@ from .models import (
     HarnessConfig, SessionState, Feature, ErrorCategory, UsageStats,
     AssistantMessageEvent, ToolResultEvent
 )
-from .cost_tracker import CostTracker
+from .token_tracker import TokenTracker, format_tokens
 
 
 # Global flag to track if we're in graceful shutdown mode
@@ -187,7 +187,7 @@ class BaseSession(ABC):
     Provides common functionality:
     - Session state persistence
     - Timeout handling
-    - Cost tracking setup
+    - Token tracking setup
 
     Subclasses implement the actual session execution logic.
     """
@@ -203,7 +203,7 @@ class BaseSession(ABC):
         self.session_id = session_id or f"session_{uuid.uuid4().hex[:8]}"
         self.context_usage_percent = 0.0
         self._state_file = self._get_state_file_path()
-        self._cost_tracker = CostTracker(config.model)
+        self._token_tracker = TokenTracker(config.model)
         self._started_at: Optional[datetime] = None
 
     def _get_state_file_path(self) -> Path:
@@ -538,21 +538,16 @@ class SDKSession(BaseSession):
             result.raw_output = "\n".join(all_messages)
 
             if total_input_tokens or total_output_tokens:
-                cost = self._cost_tracker.calculate_cost(
-                    input_tokens=total_input_tokens,
-                    output_tokens=total_output_tokens,
-                    cache_read_tokens=total_cache_read_tokens
-                )
                 result.usage_stats = UsageStats(
                     input_tokens=total_input_tokens,
                     output_tokens=total_output_tokens,
                     cache_read_tokens=total_cache_read_tokens,
                     cache_write_tokens=total_cache_write_tokens,
                     model=self.config.model,
-                    cost_usd=cost
                 )
                 cache_info = f" (cache: {total_cache_read_tokens}r/{total_cache_write_tokens}w)" if total_cache_read_tokens or total_cache_write_tokens else ""
-                print(f"[SDK] Total usage: {total_input_tokens} in / {total_output_tokens} out{cache_info} (${cost:.4f})")
+                total_tokens = total_input_tokens + total_output_tokens
+                print(f"[SDK] Total usage: {format_tokens(total_input_tokens)} in / {format_tokens(total_output_tokens)} out{cache_info} ({format_tokens(total_tokens)} total)")
 
             print(f"\n{'='*60}")
             print(f"[SDK] Session completed - processed {message_count} messages")

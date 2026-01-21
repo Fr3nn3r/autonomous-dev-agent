@@ -11,7 +11,7 @@ This roadmap prioritizes reliability and observability over scalability. The goa
 **Priority Order**:
 1. Reliability (make it work consistently) ✅
 1.5. Discovery (analyze existing projects, generate backlog)
-2. Observability (see what it's doing, track costs)
+2. Observability (see what it's doing, track token usage)
 3. Verification (ensure quality before marking complete)
 4. Scalability (handle larger projects - future)
 
@@ -205,7 +205,7 @@ ada discover <path> --dry-run
 
 ## Phase 2: Observability (Dashboard)
 
-**Goal**: Real-time visibility into agent progress and costs.
+**Goal**: Real-time visibility into agent progress and token usage.
 
 **Status**: ✅ Complete (2026-01-18)
 
@@ -218,14 +218,14 @@ ada discover <path> --dry-run
 
 | ID | Feature | Description | Status | Priority |
 |----|---------|-------------|--------|----------|
-| O1 | **Cost Tracking** | Track tokens (input/output/cache), calculate API cost per session and per feature. Parse CLI mode JSONL logs from `~/.claude/projects/`. Store costs in session results and backlog. Support both CLI and SDK modes. | ✅ Done | Critical |
+| O1 | **Token Tracking** | Track tokens (input/output/cache) per session and per feature. Parse CLI mode JSONL logs from `~/.claude/projects/`. Store token usage in session results and backlog. Support both CLI and SDK modes. | ✅ Done | Critical |
 | O2 | **Adaptive Model Selection** | Default to Sonnet for most tasks, use Opus only for complex features. Per-feature model override in backlog. Complexity detection based on feature description, estimated effort, and dependencies. | ✅ Done | Critical |
 | O3 | **Dashboard Backend** | FastAPI server exposing ADA state via REST API. Endpoints: `/status`, `/backlog`, `/sessions`, `/progress`, `/config`. WebSocket for live updates. | ✅ Done | Critical |
 | O4 | **Dashboard UI** | Real-time view: current feature, session progress, backlog status, recent activity. Match AgenticContextBuilder design. | ✅ Done | Critical |
-| O5 | **Session History** | Persistent log of all sessions: start/end time, duration, tokens used, cost, outcome (success/failure/handoff), feature worked on. | ✅ Done | High |
+| O5 | **Session History** | Persistent log of all sessions: start/end time, duration, tokens used, outcome (success/failure/handoff), feature worked on. | ✅ Done | High |
 | O6 | **Live Log Streaming** | WebSocket stream of progress file updates. Real-time console output in dashboard. | ✅ Done | High |
 | O7 | **Feature Timeline** | Visual timeline/Gantt showing feature progression across sessions. Time spent per feature. | ✅ Done | Medium |
-| O8 | **Cost Projections** | Estimate remaining cost based on: features pending, average cost per feature, historical data. | ✅ Done | Medium |
+| O8 | **Token Projections** | Estimate remaining token usage based on: features pending, average tokens per feature, historical data. | ✅ Done | Medium |
 | O9 | **Alerts/Notifications** | Desktop notifications (Windows toast) on: completion, failure, billing warning. Optional email/webhook. | ✅ Done | Low |
 
 ### Phase 2 Dashboard Structure
@@ -247,7 +247,7 @@ ada-dashboard/
 │   │   │   ├── SessionHistory.tsx
 │   │   │   └── SessionDetails.tsx
 │   │   ├── metrics/
-│   │   │   ├── CostTracker.tsx
+│   │   │   ├── TokenTracker.tsx
 │   │   │   ├── TokenUsage.tsx
 │   │   │   └── ProgressStats.tsx
 │   │   └── ui/  # shadcn components
@@ -263,20 +263,13 @@ ada-dashboard/
 
 ### Phase 2 Implementation Notes
 
-**O1: Cost Tracking**
+**O1: Token Tracking**
 
-Unified cost tracking for both CLI and SDK modes:
+Unified token tracking for both CLI and SDK modes:
 
 ```python
-class CostTracker:
-    """Track and calculate costs from Claude usage."""
-
-    # Pricing per 1M tokens (as of 2026-01)
-    PRICING = {
-        "claude-opus-4-5-20251101": {"input": 15.00, "output": 75.00, "cache_read": 1.50},
-        "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00, "cache_read": 0.30},
-        "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00, "cache_read": 0.10},
-    }
+class TokenTracker:
+    """Track token consumption from Claude usage."""
 
     def parse_cli_logs(self, project_path: Path) -> UsageStats:
         """Parse JSONL logs from ~/.claude/projects/<project>/"""
@@ -288,8 +281,8 @@ class CostTracker:
         # SDK mode returns usage directly in message.usage
         pass
 
-    def calculate_cost(self, stats: UsageStats, model: str) -> float:
-        """Calculate cost in USD from token counts."""
+    def track_usage(self, input_tokens: int, output_tokens: int, ...) -> None:
+        """Track token consumption for current session."""
         pass
 
 class UsageStats(BaseModel):
@@ -297,12 +290,8 @@ class UsageStats(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cache_read_tokens: int = 0
-    cache_create_tokens: int = 0
+    cache_write_tokens: int = 0
     model: str = ""
-    session_id: str = ""
-    feature_id: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.now)
-    cost_usd: float = 0.0
 ```
 
 **O2: Adaptive Model Selection**
@@ -460,7 +449,7 @@ These features are available if needed later:
 | 0.1.0 | 2026-01-17 | Initial implementation: CLI, backlog, progress tracking |
 | 0.2.0 | 2026-01-18 | Dual mode (CLI/SDK), verbose logging, Windows fixes |
 | 0.3.0 | 2026-01-18 | Phase 1 reliability features (retry, test validation, resume, error classification, rollback, health checks, graceful shutdown, timeout) |
-| 0.4.0 | 2026-01-18 | Phase 1.5 discovery (codebase analysis, code review, test gaps, requirements extraction, backlog generation, best practices, incremental tracking) + Phase 2 observability dashboard (cost tracking, model selection, session history, FastAPI backend, React UI) |
+| 0.4.0 | 2026-01-18 | Phase 1.5 discovery (codebase analysis, code review, test gaps, requirements extraction, backlog generation, best practices, incremental tracking) + Phase 2 observability dashboard (token tracking, model selection, session history, FastAPI backend, React UI) |
 | 0.5.0 | 2026-01-18 | Phase 3 verification features (Playwright E2E, pre-complete hooks, coverage checking, lint/type checks, manual approval) |
-| 0.6.0 | 2026-01-18 | Phase 2 completion: Feature timeline (Gantt view), cost projections, alerts/notifications with desktop notifications |
+| 0.6.0 | 2026-01-18 | Phase 2 completion: Feature timeline (Gantt view), token projections, alerts/notifications with desktop notifications |
 | 0.7.0 | TBD | Visual regression testing |

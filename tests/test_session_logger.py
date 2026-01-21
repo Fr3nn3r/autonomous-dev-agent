@@ -178,7 +178,6 @@ class TestSessionLogger:
             output_tokens=500,
             cache_read_tokens=200,
             cache_write_tokens=100,
-            cost_usd=0.015
         )
 
         entries = read_session_log(workspace.get_session_log_path("test_session"))
@@ -188,7 +187,6 @@ class TestSessionLogger:
         assert context_entry["total_input_tokens"] == 1000
         assert context_entry["total_output_tokens"] == 500
         assert context_entry["total_tokens"] == 1500
-        assert context_entry["total_cost_usd"] == 0.015
 
         logger.close()
 
@@ -233,7 +231,7 @@ class TestSessionLogger:
         )
         logger.log_session_start()
         logger.log_assistant(content="Done!")
-        logger.log_context_update(input_tokens=1000, output_tokens=500, cost_usd=0.01)
+        logger.log_context_update(input_tokens=1000, output_tokens=500)
 
         index_entry = logger.log_session_end(
             outcome="success",
@@ -248,13 +246,11 @@ class TestSessionLogger:
         assert end_entry["outcome"] == "success"
         assert end_entry["reason"] == "Feature completed"
         assert end_entry["turns"] == 1
-        assert end_entry["cost_usd"] == 0.01
 
         # Verify index entry
         assert index_entry.session_id == "test_session"
         assert index_entry.outcome == "success"
         assert index_entry.turns == 1
-        assert index_entry.cost_usd == 0.01
 
     def test_updates_session_index(self, tmp_path: Path):
         """Test that session end updates the session index."""
@@ -384,7 +380,7 @@ class TestGetSessionSummary:
             '{"type": "session_start", "timestamp": "2024-01-15T10:00:00", "session_id": "s1", "agent_type": "coding", "feature_id": "auth", "model": "claude-sonnet"}\n'
             '{"type": "assistant", "turn": 1, "content": "Working..."}\n'
             '{"type": "assistant", "turn": 2, "content": "Done!"}\n'
-            '{"type": "context_update", "total_tokens": 5000, "total_cost_usd": 0.05}\n'
+            '{"type": "context_update", "total_tokens": 5000}\n'
             '{"type": "error", "category": "transient", "message": "Network error"}\n'
             '{"type": "session_end", "timestamp": "2024-01-15T10:30:00", "outcome": "success", "files_changed": ["/src/auth.py"]}\n'
         )
@@ -397,7 +393,6 @@ class TestGetSessionSummary:
         assert summary["model"] == "claude-sonnet"
         assert summary["turns"] == 2
         assert summary["total_tokens"] == 5000
-        assert summary["cost_usd"] == 0.05
         assert summary["outcome"] == "success"
         assert len(summary["errors"]) == 1
         assert summary["errors"][0]["category"] == "transient"

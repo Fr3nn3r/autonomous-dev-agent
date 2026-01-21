@@ -301,7 +301,6 @@ class TestFeatureCompletionHandler:
 
         assert handler.config == config
         assert handler.project_path == tmp_path
-        assert handler.get_total_cost() == 0.0
 
     @pytest.mark.asyncio
     async def test_run_tests_no_command(self, tmp_path):
@@ -325,8 +324,8 @@ class TestFeatureCompletionHandler:
         assert success
         assert "No test command" in message
 
-    def test_record_session_tracks_cost(self, tmp_path):
-        """Should track cumulative cost across sessions."""
+    def test_record_session_tracks_tokens(self, tmp_path):
+        """Should track token usage across sessions."""
         config = HarnessConfig()
         git = MockGitOperations()
         progress = MockProgressLog()
@@ -355,7 +354,7 @@ class TestFeatureCompletionHandler:
             session_id="test-session",
             success=True,
             context_usage_percent=50.0,
-            usage_stats=UsageStats(cost_usd=0.05)
+            usage_stats=UsageStats(input_tokens=5000, output_tokens=2000)
         )
 
         handler.record_session(
@@ -365,17 +364,8 @@ class TestFeatureCompletionHandler:
             outcome=SessionOutcome.SUCCESS
         )
 
-        assert handler.get_total_cost() == 0.05
-
-        # Record another session
-        handler.record_session(
-            session=mock_session,
-            feature=feature,
-            result=result,
-            outcome=SessionOutcome.SUCCESS
-        )
-
-        assert handler.get_total_cost() == 0.10
+        # Verify session was recorded
+        session_history.add_record.assert_called()
 
     def test_set_backlog_saver(self, tmp_path):
         """Should allow setting the backlog saver callback."""

@@ -1,6 +1,6 @@
 """Session history management for persistent tracking.
 
-Stores session records in a JSON file for cost tracking, analytics,
+Stores session records in a JSON file for token tracking, analytics,
 and dashboard display.
 """
 
@@ -14,17 +14,16 @@ from pydantic import BaseModel, Field
 from .models import SessionRecord, SessionOutcome, UsageStats
 
 
-class CostSummary(BaseModel):
-    """Summary of costs over a time period."""
-    total_cost_usd: float = 0.0
-    total_sessions: int = 0
+class TokenSummary(BaseModel):
+    """Summary of token consumption over a time period."""
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     total_cache_read_tokens: int = 0
     total_cache_write_tokens: int = 0
+    total_sessions: int = 0
 
     # Breakdown by model
-    cost_by_model: dict[str, float] = Field(default_factory=dict)
+    tokens_by_model: dict[str, int] = Field(default_factory=dict)
     sessions_by_model: dict[str, int] = Field(default_factory=dict)
 
     # Breakdown by outcome
@@ -33,6 +32,11 @@ class CostSummary(BaseModel):
     # Time period
     period_start: Optional[datetime] = None
     period_end: Optional[datetime] = None
+
+    @property
+    def total_tokens(self) -> int:
+        """Get total tokens (input + output)."""
+        return self.total_input_tokens + self.total_output_tokens
 
 
 class SessionHistory:
@@ -213,42 +217,42 @@ class SessionHistory:
             if start <= r.started_at <= end
         ]
 
-    def get_cost_summary(
+    def get_token_summary(
         self,
         start: Optional[datetime] = None,
         end: Optional[datetime] = None
-    ) -> CostSummary:
-        """Calculate cost summary for a time period.
+    ) -> TokenSummary:
+        """Calculate token summary for a time period.
 
         Args:
             start: Start of the period (defaults to all time)
             end: End of the period (defaults to now)
 
         Returns:
-            CostSummary with aggregated data
+            TokenSummary with aggregated data
         """
         if start:
             records = self.get_records_in_range(start, end)
         else:
             records = self._records
 
-        summary = CostSummary(
+        summary = TokenSummary(
             period_start=start,
             period_end=end or datetime.now()
         )
 
         for record in records:
-            summary.total_cost_usd += record.cost_usd
-            summary.total_sessions += 1
             summary.total_input_tokens += record.input_tokens
             summary.total_output_tokens += record.output_tokens
             summary.total_cache_read_tokens += record.cache_read_tokens
             summary.total_cache_write_tokens += record.cache_write_tokens
+            summary.total_sessions += 1
 
             # By model
             if record.model:
-                summary.cost_by_model[record.model] = (
-                    summary.cost_by_model.get(record.model, 0.0) + record.cost_usd
+                total_tokens = record.input_tokens + record.output_tokens
+                summary.tokens_by_model[record.model] = (
+                    summary.tokens_by_model.get(record.model, 0) + total_tokens
                 )
                 summary.sessions_by_model[record.model] = (
                     summary.sessions_by_model.get(record.model, 0) + 1
@@ -262,14 +266,14 @@ class SessionHistory:
 
         return summary
 
-    def get_daily_cost_summary(self, days: int = 7) -> list[CostSummary]:
-        """Get cost summaries for each day in a period.
+    def get_daily_token_summary(self, days: int = 7) -> list[TokenSummary]:
+        """Get token summaries for each day in a period.
 
         Args:
             days: Number of days to include
 
         Returns:
-            List of CostSummary, one per day (most recent first)
+            List of TokenSummary, one per day (most recent first)
         """
         summaries = []
         now = datetime.now()
@@ -279,7 +283,7 @@ class SessionHistory:
             day_start = day_end.replace(hour=0, minute=0, second=0, microsecond=0)
             day_end = day_start + timedelta(days=1)
 
-            summary = self.get_cost_summary(day_start, day_end)
+            summary = self.get_token_summary(day_start, day_end)
             summaries.append(summary)
 
         return summaries
@@ -297,17 +301,17 @@ class SessionHistory:
 
         return stats
 
-    def get_feature_cost(self, feature_id: str) -> float:
-        """Get total cost for a specific feature.
+    def get_feature_tokens(self, feature_id: str) -> int:
+        """Get total tokens for a specific feature.
 
         Args:
             feature_id: Feature ID
 
         Returns:
-            Total cost in USD
+            Total tokens (input + output)
         """
         records = self.get_records_for_feature(feature_id)
-        return sum(r.cost_usd for r in records)
+        return sum(r.input_tokens + r.output_tokens for r in records)
 
     def get_feature_stats(self, feature_id: str) -> dict:
         """Get statistics for a specific feature.
@@ -324,7 +328,6 @@ class SessionHistory:
             return {
                 "feature_id": feature_id,
                 "total_sessions": 0,
-                "total_cost_usd": 0.0,
                 "total_input_tokens": 0,
                 "total_output_tokens": 0,
                 "outcomes": {},
@@ -338,7 +341,6 @@ class SessionHistory:
         return {
             "feature_id": feature_id,
             "total_sessions": len(records),
-            "total_cost_usd": sum(r.cost_usd for r in records),
             "total_input_tokens": sum(r.input_tokens for r in records),
             "total_output_tokens": sum(r.output_tokens for r in records),
             "outcomes": outcomes,
@@ -365,7 +367,6 @@ def create_session_record(
     output_tokens: int = 0,
     cache_read_tokens: int = 0,
     cache_write_tokens: int = 0,
-    cost_usd: float = 0.0,
     files_changed: Optional[list[str]] = None,
     commit_hash: Optional[str] = None,
     error_message: Optional[str] = None,
@@ -384,7 +385,6 @@ def create_session_record(
         output_tokens: Output tokens generated
         cache_read_tokens: Cache read tokens
         cache_write_tokens: Cache write tokens
-        cost_usd: Session cost
         files_changed: List of modified files
         commit_hash: Commit hash if committed
         error_message: Error message if failed
@@ -406,7 +406,6 @@ def create_session_record(
         cache_read_tokens=cache_read_tokens,
         cache_write_tokens=cache_write_tokens,
         model=model,
-        cost_usd=cost_usd,
         files_changed=files_changed or [],
         commit_hash=commit_hash,
         error_message=error_message,

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from autonomous_dev_agent.session_history import (
     SessionHistory,
-    CostSummary,
+    TokenSummary,
     create_session_record,
 )
 from autonomous_dev_agent.models import SessionRecord, SessionOutcome, UsageStats
@@ -42,7 +42,6 @@ class TestSessionHistory:
             outcome=SessionOutcome.SUCCESS,
             input_tokens=1000,
             output_tokens=500,
-            cost_usd=0.05
         )
 
         session_history.add_record(record)
@@ -146,24 +145,24 @@ class TestSessionHistory:
         session_history.add_record(create_session_record(
             session_id="test-001",
             outcome=SessionOutcome.HANDOFF,
-            cost_usd=0.10
+            input_tokens=1000
         ))
 
         # Update the record
         updated = session_history.update_record(
             "test-001",
             outcome=SessionOutcome.SUCCESS,
-            cost_usd=0.15
+            input_tokens=1500
         )
         assert updated is True
 
         record = session_history.get_record("test-001")
         assert record.outcome == SessionOutcome.SUCCESS
-        assert record.cost_usd == 0.15
+        assert record.input_tokens == 1500
 
     def test_update_nonexistent_record(self, session_history):
         """Test updating a non-existent record returns False."""
-        updated = session_history.update_record("nonexistent", cost_usd=1.0)
+        updated = session_history.update_record("nonexistent", input_tokens=1000)
         assert updated is False
 
     def test_clear(self, session_history):
@@ -177,26 +176,25 @@ class TestSessionHistory:
         assert session_history.count() == 0
 
 
-class TestCostSummary:
-    """Test cost summary calculations."""
+class TestTokenSummary:
+    """Test token summary calculations."""
 
-    def test_get_cost_summary_empty(self, session_history):
-        """Test cost summary on empty history."""
-        summary = session_history.get_cost_summary()
+    def test_get_token_summary_empty(self, session_history):
+        """Test token summary on empty history."""
+        summary = session_history.get_token_summary()
 
-        assert summary.total_cost_usd == 0.0
+        assert summary.total_tokens == 0
         assert summary.total_sessions == 0
         assert summary.total_input_tokens == 0
         assert summary.total_output_tokens == 0
 
-    def test_get_cost_summary_aggregation(self, session_history):
-        """Test that cost summary aggregates correctly."""
+    def test_get_token_summary_aggregation(self, session_history):
+        """Test that token summary aggregates correctly."""
         session_history.add_record(create_session_record(
             session_id="test-001",
             model="claude-sonnet-4-20250514",
             input_tokens=1000,
             output_tokens=500,
-            cost_usd=0.05,
             outcome=SessionOutcome.SUCCESS
         ))
         session_history.add_record(create_session_record(
@@ -204,39 +202,43 @@ class TestCostSummary:
             model="claude-sonnet-4-20250514",
             input_tokens=2000,
             output_tokens=1000,
-            cost_usd=0.10,
             outcome=SessionOutcome.HANDOFF
         ))
 
-        summary = session_history.get_cost_summary()
+        summary = session_history.get_token_summary()
 
         assert summary.total_sessions == 2
         assert summary.total_input_tokens == 3000
         assert summary.total_output_tokens == 1500
-        assert abs(summary.total_cost_usd - 0.15) < 0.0001
+        assert summary.total_tokens == 4500
 
-    def test_cost_by_model(self, session_history):
-        """Test cost breakdown by model."""
+    def test_tokens_by_model(self, session_history):
+        """Test token breakdown by model."""
         session_history.add_record(create_session_record(
             session_id="test-001",
             model="claude-sonnet-4-20250514",
-            cost_usd=0.10
+            input_tokens=1000,
+            output_tokens=500
         ))
         session_history.add_record(create_session_record(
             session_id="test-002",
             model="claude-opus-4-5-20251101",
-            cost_usd=0.50
+            input_tokens=5000,
+            output_tokens=2500
         ))
         session_history.add_record(create_session_record(
             session_id="test-003",
             model="claude-sonnet-4-20250514",
-            cost_usd=0.15
+            input_tokens=1500,
+            output_tokens=750
         ))
 
-        summary = session_history.get_cost_summary()
+        summary = session_history.get_token_summary()
 
-        assert summary.cost_by_model["claude-sonnet-4-20250514"] == 0.25
-        assert summary.cost_by_model["claude-opus-4-5-20251101"] == 0.50
+        # Sonnet: 1000+500 + 1500+750 = 3750
+        assert summary.tokens_by_model["claude-sonnet-4-20250514"] == 3750
+        # Opus: 5000+2500 = 7500
+        assert summary.tokens_by_model["claude-opus-4-5-20251101"] == 7500
         assert summary.sessions_by_model["claude-sonnet-4-20250514"] == 2
         assert summary.sessions_by_model["claude-opus-4-5-20251101"] == 1
 
@@ -255,54 +257,56 @@ class TestCostSummary:
             session_id="test-004", outcome=SessionOutcome.HANDOFF
         ))
 
-        summary = session_history.get_cost_summary()
+        summary = session_history.get_token_summary()
 
         assert summary.sessions_by_outcome["success"] == 2
         assert summary.sessions_by_outcome["failure"] == 1
         assert summary.sessions_by_outcome["handoff"] == 1
 
-    def test_cost_summary_with_date_range(self, session_history):
-        """Test cost summary with date filtering."""
+    def test_token_summary_with_date_range(self, session_history):
+        """Test token summary with date filtering."""
         now = datetime.now()
 
         session_history.add_record(create_session_record(
             session_id="old",
-            cost_usd=100.00,
+            input_tokens=100000,
+            output_tokens=50000,
             started_at=now - timedelta(days=30)
         ))
         session_history.add_record(create_session_record(
             session_id="recent",
-            cost_usd=10.00,
+            input_tokens=1000,
+            output_tokens=500,
             started_at=now - timedelta(hours=1)
         ))
 
         # Last 7 days only
-        summary = session_history.get_cost_summary(
+        summary = session_history.get_token_summary(
             start=now - timedelta(days=7)
         )
 
         assert summary.total_sessions == 1
-        assert summary.total_cost_usd == 10.00
+        assert summary.total_tokens == 1500
 
 
 class TestFeatureStats:
     """Test feature-specific statistics."""
 
-    def test_get_feature_cost(self, session_history):
-        """Test getting total cost for a feature."""
+    def test_get_feature_tokens(self, session_history):
+        """Test getting total tokens for a feature."""
         session_history.add_record(create_session_record(
-            session_id="test-001", feature_id="feature-a", cost_usd=0.10
+            session_id="test-001", feature_id="feature-a", input_tokens=1000, output_tokens=500
         ))
         session_history.add_record(create_session_record(
-            session_id="test-002", feature_id="feature-b", cost_usd=0.20
+            session_id="test-002", feature_id="feature-b", input_tokens=2000, output_tokens=1000
         ))
         session_history.add_record(create_session_record(
-            session_id="test-003", feature_id="feature-a", cost_usd=0.15
+            session_id="test-003", feature_id="feature-a", input_tokens=1500, output_tokens=750
         ))
 
-        assert session_history.get_feature_cost("feature-a") == 0.25
-        assert session_history.get_feature_cost("feature-b") == 0.20
-        assert session_history.get_feature_cost("feature-c") == 0.0
+        assert session_history.get_feature_tokens("feature-a") == 3750  # 1000+500+1500+750
+        assert session_history.get_feature_tokens("feature-b") == 3000  # 2000+1000
+        assert session_history.get_feature_tokens("feature-c") == 0
 
     def test_get_feature_stats(self, session_history):
         """Test getting comprehensive stats for a feature."""
@@ -311,7 +315,6 @@ class TestFeatureStats:
             feature_id="feature-a",
             input_tokens=1000,
             output_tokens=500,
-            cost_usd=0.10,
             outcome=SessionOutcome.HANDOFF
         ))
         session_history.add_record(create_session_record(
@@ -319,7 +322,6 @@ class TestFeatureStats:
             feature_id="feature-a",
             input_tokens=2000,
             output_tokens=1000,
-            cost_usd=0.20,
             outcome=SessionOutcome.SUCCESS
         ))
 
@@ -327,7 +329,6 @@ class TestFeatureStats:
 
         assert stats["feature_id"] == "feature-a"
         assert stats["total_sessions"] == 2
-        assert abs(stats["total_cost_usd"] - 0.30) < 0.0001
         assert stats["total_input_tokens"] == 3000
         assert stats["total_output_tokens"] == 1500
         assert stats["outcomes"]["handoff"] == 1
@@ -338,7 +339,6 @@ class TestFeatureStats:
         stats = session_history.get_feature_stats("nonexistent")
 
         assert stats["total_sessions"] == 0
-        assert stats["total_cost_usd"] == 0.0
 
 
 class TestSessionRecordModel:
@@ -378,7 +378,6 @@ class TestSessionRecordModel:
             output_tokens=500,
             cache_read_tokens=200,
             model="claude-sonnet-4-20250514",
-            cost_usd=0.05,
             outcome=SessionOutcome.SUCCESS
         )
 
@@ -389,7 +388,6 @@ class TestSessionRecordModel:
         assert stats.output_tokens == 500
         assert stats.cache_read_tokens == 200
         assert stats.model == "claude-sonnet-4-20250514"
-        assert stats.cost_usd == 0.05
 
 
 class TestCreateSessionRecord:
@@ -421,7 +419,6 @@ class TestCreateSessionRecord:
             output_tokens=2500,
             cache_read_tokens=1000,
             cache_write_tokens=500,
-            cost_usd=0.50,
             files_changed=["file1.py", "file2.py"],
             commit_hash="abc123",
             error_message="Test error",
@@ -434,7 +431,6 @@ class TestCreateSessionRecord:
         assert record.output_tokens == 2500
         assert record.cache_read_tokens == 1000
         assert record.cache_write_tokens == 500
-        assert record.cost_usd == 0.50
         assert record.files_changed == ["file1.py", "file2.py"]
         assert record.commit_hash == "abc123"
         assert record.error_message == "Test error"
@@ -449,34 +445,34 @@ class TestCreateSessionRecord:
         assert record.outcome == SessionOutcome.SUCCESS
         assert record.input_tokens == 0
         assert record.output_tokens == 0
-        assert record.cost_usd == 0.0
         assert record.files_changed == []
 
 
-class TestDailyCostSummary:
-    """Test daily cost summary functionality."""
+class TestDailyTokenSummary:
+    """Test daily token summary functionality."""
 
-    def test_get_daily_cost_summary(self, session_history):
-        """Test getting daily cost summaries."""
+    def test_get_daily_token_summary(self, session_history):
+        """Test getting daily token summaries."""
         now = datetime.now()
 
         # Add records for different days
         for i in range(3):
             session_history.add_record(create_session_record(
                 session_id=f"day-{i}",
-                cost_usd=10.0 * (i + 1),
+                input_tokens=1000 * (i + 1),
+                output_tokens=500 * (i + 1),
                 started_at=now - timedelta(days=i, hours=1)
             ))
 
-        summaries = session_history.get_daily_cost_summary(days=3)
+        summaries = session_history.get_daily_token_summary(days=3)
 
         assert len(summaries) == 3
-        # Today should be first
-        assert summaries[0].total_cost_usd == 10.0
-        # Yesterday
-        assert summaries[1].total_cost_usd == 20.0
-        # Day before
-        assert summaries[2].total_cost_usd == 30.0
+        # Today should be first (i=0, tokens=1500)
+        assert summaries[0].total_tokens == 1500
+        # Yesterday (i=1, tokens=3000)
+        assert summaries[1].total_tokens == 3000
+        # Day before (i=2, tokens=4500)
+        assert summaries[2].total_tokens == 4500
 
     def test_get_total_usage_stats(self, session_history):
         """Test getting total usage stats across all sessions."""
@@ -484,17 +480,14 @@ class TestDailyCostSummary:
             session_id="test-001",
             input_tokens=1000,
             output_tokens=500,
-            cost_usd=0.10
         ))
         session_history.add_record(create_session_record(
             session_id="test-002",
             input_tokens=2000,
             output_tokens=1000,
-            cost_usd=0.20
         ))
 
         stats = session_history.get_total_usage_stats()
 
         assert stats.input_tokens == 3000
         assert stats.output_tokens == 1500
-        assert abs(stats.cost_usd - 0.30) < 0.0001

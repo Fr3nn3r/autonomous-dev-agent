@@ -1,7 +1,7 @@
 """Adaptive model selection based on task complexity.
 
 Selects the appropriate Claude model based on feature complexity,
-dependencies, and keywords to balance cost and capability.
+dependencies, and keywords to balance capability and efficiency.
 """
 
 import re
@@ -93,7 +93,7 @@ class ModelSelector:
     """Selects appropriate Claude model based on task complexity.
 
     Strategy:
-    - Default to Sonnet (cost-effective, good for most tasks)
+    - Default to Sonnet (balanced capability, good for most tasks)
     - Escalate to Opus for complex architecture/security/refactor tasks
     - Use Haiku for simple documentation/typo fixes
     - Honor per-feature model overrides
@@ -286,15 +286,13 @@ class ModelSelector:
                 short_name = name
                 break
 
-        pricing_estimates = {
-            "opus": {"input": "$15/M", "output": "$75/M", "description": "Most capable, highest cost"},
-            "sonnet": {"input": "$3/M", "output": "$15/M", "description": "Balanced capability and cost"},
-            "haiku": {"input": "$1/M", "output": "$5/M", "description": "Fastest, lowest cost"},
+        model_descriptions = {
+            "opus": {"description": "Most capable model"},
+            "sonnet": {"description": "Balanced capability model"},
+            "haiku": {"description": "Fastest model"},
         }
 
-        info = pricing_estimates.get(short_name, {
-            "input": "Unknown",
-            "output": "Unknown",
+        info = model_descriptions.get(short_name, {
             "description": "Unknown model"
         })
 

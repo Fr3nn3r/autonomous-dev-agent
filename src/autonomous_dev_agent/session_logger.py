@@ -86,7 +86,6 @@ class SessionLogger:
         self._total_output_tokens = 0
         self._total_cache_read = 0
         self._total_cache_write = 0
-        self._cost_usd = 0.0
         self._files_changed: list[str] = []
         self._started_at = datetime.now()
         self._file_handle: Optional[Any] = None
@@ -224,7 +223,6 @@ class SessionLogger:
         output_tokens: int,
         cache_read_tokens: int = 0,
         cache_write_tokens: int = 0,
-        cost_usd: float = 0.0
     ) -> None:
         """Log a context/usage update.
 
@@ -233,13 +231,11 @@ class SessionLogger:
             output_tokens: Output tokens for this turn
             cache_read_tokens: Cache read tokens
             cache_write_tokens: Cache write tokens
-            cost_usd: Cost for this turn
         """
         self._total_input_tokens += input_tokens
         self._total_output_tokens += output_tokens
         self._total_cache_read += cache_read_tokens
         self._total_cache_write += cache_write_tokens
-        self._cost_usd += cost_usd
 
         total_tokens = self._total_input_tokens + self._total_output_tokens
 
@@ -257,8 +253,6 @@ class SessionLogger:
             "total_output_tokens": self._total_output_tokens,
             "total_tokens": total_tokens,
             "context_percent": round(context_percent, 2),
-            "cost_usd": round(cost_usd, 6),
-            "total_cost_usd": round(self._cost_usd, 6)
         })
 
     def log_error(
@@ -319,7 +313,6 @@ class SessionLogger:
                 "cache_read": self._total_cache_read,
                 "cache_write": self._total_cache_write
             },
-            "cost_usd": round(self._cost_usd, 6),
             "files_changed": self._files_changed,
             "commit_hash": commit_hash,
             "handoff_notes": handoff_notes
@@ -342,7 +335,6 @@ class SessionLogger:
             outcome=outcome,
             turns=self._turn,
             tokens_total=self._total_input_tokens + self._total_output_tokens,
-            cost_usd=self._cost_usd,
             size_bytes=file_size
         )
 
@@ -377,11 +369,6 @@ class SessionLogger:
     def total_tokens(self) -> int:
         """Get total tokens used."""
         return self._total_input_tokens + self._total_output_tokens
-
-    @property
-    def total_cost(self) -> float:
-        """Get total cost."""
-        return self._cost_usd
 
     @property
     def files_changed(self) -> list[str]:
@@ -471,7 +458,6 @@ def get_session_summary(log_path: Path) -> Optional[dict]:
         "outcome": None,
         "turns": 0,
         "total_tokens": 0,
-        "cost_usd": 0.0,
         "files_changed": [],
         "errors": []
     }
@@ -491,7 +477,6 @@ def get_session_summary(log_path: Path) -> Optional[dict]:
 
         elif entry_type == LogEntryType.CONTEXT_UPDATE.value:
             summary["total_tokens"] = entry.get("total_tokens", 0)
-            summary["cost_usd"] = entry.get("total_cost_usd", 0.0)
 
         elif entry_type == LogEntryType.ERROR.value:
             summary["errors"].append({
